@@ -63,7 +63,7 @@ impl CourseSpan {
             let borrowed = record.borrow();
             let start_pos = (borrowed.start_time.hour() - start_hour) as usize;
             let end_pos = (borrowed.end_time.hour() - start_hour) as usize;
-            let width = end_pos - start_pos;
+            let width = end_pos - start_pos + 1;
             drop(borrowed);
 
             // Find first available row
