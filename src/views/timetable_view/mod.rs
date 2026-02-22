@@ -1,27 +1,24 @@
-use super::View;
+mod layout_engine;
+
 use crate::{
     CrynContext,
     models::{CourseSpan, OrderedWeekday},
-    views::CoursesView,
+    views::{CoursesView, View},
     windows::{MainWindow, Window},
 };
 use egui::{Align, Label, Layout, RichText, Sense};
 use std::collections::BTreeMap;
 
-const TIMESLOT_WIDTH: f32 = 95.0;
-const TIMESLOT_HEIGHT: f32 = 43.0;
-
-const DAY_WIDTH: f32 = 158.0;
-const DAY_HEIGHT: f32 = 42.0;
-
 pub struct TimeTableView {
     span_map: BTreeMap<OrderedWeekday, CourseSpan>,
+    layout_context: layout_engine::LayoutContext,
 }
 
 impl TimeTableView {
     pub fn new() -> Self {
         Self {
             span_map: BTreeMap::new(),
+            layout_context: layout_engine::LayoutContext::new(),
         }
     }
 }
@@ -47,8 +44,11 @@ impl View for TimeTableView {
         });
 
         self.span_map.iter().for_each(|(day, span)| {
-            println!("{}: {} periods", day.to_string(), span.get_period_count());
+            println!("{}: {} periods", day.to_string(), span.period_count());
         });
+
+        // Recompute everything
+        layout_engine::invalidate_layout(&mut self.layout_context);
     }
 
     fn on_hide(&mut self, _app_ctx: &CrynContext) {}
@@ -62,6 +62,7 @@ impl View for TimeTableView {
         // 3en safra wltanya khadra ;)
         // ololy a3ml ehhhhhh
 
+        // If no courses, show placeholder
         if self.span_map.is_empty() {
             ui.centered_and_justified(|ui| {
                 if ui
@@ -81,20 +82,19 @@ impl View for TimeTableView {
             return;
         }
 
-        ui.with_layout(
-            Layout::left_to_right(Align::Min).with_main_wrap(true),
-            |ui| {
-                for (day, span) in &self.span_map {
-                    let period_count = span.get_period_count();
-                    let width = period_count as f32 * TIMESLOT_WIDTH;
+        // Group has inner margin = 6px
+        // Render timetable
+        ui.scope(|ui| {
+            let style = ui.style_mut();
+            style.spacing.item_spacing = egui::vec2(0.0, 0.0);
 
-                    ui.group(|ui| {
-                        ui.vertical(|ui| {
-                            ui.add_sized([width, DAY_HEIGHT], Label::new(day.to_string()));
-                        });
-                    });
+            ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
+                layout_engine::begin(&mut self.layout_context, ui);
+
+                for (day, span) in &self.span_map {
+                    layout_engine::render_day(&mut self.layout_context, ui, day, span);
                 }
-            },
-        );
+            });
+        });
     }
 }

@@ -1,6 +1,6 @@
 use chrono::Weekday;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct OrderedWeekday(Weekday);
 
 impl Ord for OrderedWeekday {

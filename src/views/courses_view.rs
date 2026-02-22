@@ -55,15 +55,26 @@ impl CoursesView {
         let mut code_indices: Vec<usize> = Vec::new();
         let mut name_indices: Vec<usize> = Vec::new();
 
+        // Quick feat for testing
+        // Cmps123, Ammr666
+        let queries: Vec<&str> = query
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+
         definitions.iter().enumerate().for_each(|(index, def)| {
             let def = def.borrow();
-            if def.code.to_lowercase().contains(&query) {
-                code_indices.push(index);
-            }
 
-            if def.name.to_lowercase().contains(&query) {
-                name_indices.push(index);
-            }
+            queries.iter().for_each(|&q| {
+                if def.code.to_lowercase().contains(q) {
+                    code_indices.push(index);
+                }
+
+                if def.name.to_lowercase().contains(q) {
+                    name_indices.push(index);
+                }
+            });
         });
 
         self.filtered_indices = code_indices;
@@ -138,7 +149,7 @@ impl View for CoursesView {
 
         if definitions.is_empty() {
             ui.centered_and_justified(|ui| {
-                ui.heading("No courses found :(");
+                ui.heading("No courses found :( (Empty parse data)");
             });
             return;
         }
