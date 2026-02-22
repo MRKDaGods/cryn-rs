@@ -40,8 +40,11 @@ impl View for TimeTableView {
             self.span_map
                 .entry(record.borrow().day.into())
                 .or_insert(CourseSpan::new())
-                .insert_course_record(record);
+                .insert(record);
         });
+
+        // Rebuild spans
+        self.span_map.values_mut().for_each(|span| span.rebuild());
 
         self.span_map.iter().for_each(|(day, span)| {
             println!("{}: {} periods", day.to_string(), span.period_count());

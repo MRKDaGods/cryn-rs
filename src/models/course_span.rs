@@ -8,93 +8,105 @@ use std::{
 };
 
 pub struct CourseSpan {
-    map: HashMap<NaiveTime, Vec<Rc<RefCell<CourseRecord>>>>,
+    map: HashMap<(usize, usize), Rc<RefCell<CourseRecord>>>,
+    records: Vec<Rc<RefCell<CourseRecord>>>,
     min_from: Option<NaiveTime>,
     max_to: Option<NaiveTime>,
-
     grid: Vec<Vec<bool>>,
+    dirty: bool,
 }
 
 impl CourseSpan {
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
+            records: Vec::new(),
             min_from: None,
             max_to: None,
             grid: Vec::new(),
+            dirty: false,
         }
     }
 
-    pub fn insert_course_record(&mut self, record: &Rc<RefCell<CourseRecord>>) {
-        let CourseRecord {
-            start_time,
-            end_time,
-            ..
-        } = *record.borrow();
+    pub fn insert(&mut self, record: &Rc<RefCell<CourseRecord>>) {
+        let borrowed = record.borrow();
 
-        self.entry(start_time)
-            .or_insert(Vec::new())
-            .push(Rc::clone(record));
-
-        if self.min_from.is_none() || start_time < self.min_from.unwrap() {
-            self.min_from = Some(start_time);
+        if self.min_from.is_none() || borrowed.start_time < self.min_from.unwrap() {
+            self.min_from = Some(borrowed.start_time);
         }
 
-        if self.max_to.is_none() || end_time > self.max_to.unwrap() {
-            self.max_to = Some(end_time);
+        if self.max_to.is_none() || borrowed.end_time > self.max_to.unwrap() {
+            self.max_to = Some(borrowed.end_time);
         }
 
-        // Update grid
-        let start_pos = start_time.hour() as usize - self.start_hour() as usize;
-        let end_pos = end_time.hour() as usize - self.start_hour() as usize;
-        let width = end_pos - start_pos;
+        drop(borrowed);
+        self.records.push(Rc::clone(record));
+        self.dirty = true;
+    }
 
-        let mut y = 0;
-        while !self.test_record(start_pos, y, width) {
-            y += 1;
+    /// Rebuild grid
+    pub fn rebuild(&mut self) {
+        if !self.dirty {
+            return;
         }
 
-        // Mark grid positions as occupied
-        for i in start_pos..end_pos {
-            self.ensure_pos_exists(i, y);
-            self.grid[y][i] = true;
+        self.grid.clear();
+        self.map.clear();
+
+        let start_hour = self.start_hour();
+
+        // Sort by start time
+        self.records.sort_by_key(|r| r.borrow().start_time);
+        let records: Vec<_> = self.records.iter().cloned().collect();
+
+        for record in records {
+            let borrowed = record.borrow();
+            let start_pos = (borrowed.start_time.hour() - start_hour) as usize;
+            let end_pos = (borrowed.end_time.hour() - start_hour) as usize;
+            let width = end_pos - start_pos;
+            drop(borrowed);
+
+            // Find first available row
+            let mut y = 0;
+            while !self.test_record(start_pos, y, width) {
+                y += 1;
+            }
+
+            // Mark occupied
+            for i in start_pos..end_pos {
+                self.ensure_pos_exists(i, y);
+                self.grid[y][i] = true;
+            }
+
+            self.map.insert((start_pos, y), Rc::clone(&record));
         }
+
+        self.dirty = false;
     }
 
     fn ensure_pos_exists(&mut self, x: usize, y: usize) {
         while self.grid.len() <= y {
             self.grid.push(Vec::new());
         }
-
-        let row = &mut self.grid[y];
-        while row.len() <= x {
-            row.push(false);
+        while self.grid[y].len() <= x {
+            self.grid[y].push(false);
         }
     }
 
-    /// Check if there's space in the given
     fn test_record(&mut self, x: usize, y: usize, width: usize) -> bool {
-        // Ensure buffers
-        self.ensure_pos_exists(x, y);
-        self.ensure_pos_exists(x + width, y);
-
+        self.ensure_pos_exists(x + width - 1, y);
         for i in x..(x + width) {
             if self.grid[y][i] {
                 return false;
             }
         }
-
-        return true;
+        true
     }
 
     pub fn period_count(&self) -> u32 {
-        // 8->8:50 period
-        // 9->9:50 period, etc
-
         if self.min_from.is_none() || self.max_to.is_none() {
             return 0;
         }
-
         self.max_to.unwrap().hour() - self.min_from.unwrap().hour() + 1
     }
 
@@ -108,7 +120,7 @@ impl CourseSpan {
 }
 
 impl Deref for CourseSpan {
-    type Target = HashMap<NaiveTime, Vec<Rc<RefCell<CourseRecord>>>>;
+    type Target = HashMap<(usize, usize), Rc<RefCell<CourseRecord>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.map

@@ -1,5 +1,8 @@
 use crate::models::{CourseSpan, OrderedWeekday};
-use egui::{Frame, Label, Rect, RichText, Separator, Ui, UiBuilder, Vec2, epaint::MarginF32};
+use egui::{
+    Align, Color32, Frame, Label, Layout, Rect, RichText, Separator, Stroke, TextWrapMode, Ui,
+    UiBuilder, Vec2, epaint::MarginF32,
+};
 use std::collections::HashMap;
 
 const TIMETABLE_PADDING: Vec2 = Vec2::new(8.0, 8.0);
@@ -75,38 +78,107 @@ pub fn render_day(ctx: &mut LayoutContext, ui: &mut Ui, day: &OrderedWeekday, sp
 
     let layout_rect = ui
         .scope_builder(ui_builder, |ui| {
-            Frame::group(ui.style())
-                .inner_margin(MarginF32::ZERO)
-                .show(ui, |ui| {
-                    ui.vertical(|ui| {
-                        // Day header
+            ui.vertical(|ui| {
+                // Day header
+                Frame::group(ui.style())
+                    .inner_margin(MarginF32::ZERO)
+                    .corner_radius(0.0)
+                    .show(ui, |ui| {
                         ui.add_sized(
                             [width, DAY_HEADER_HEIGHT],
                             Label::new(RichText::new(day.to_string()).size(14.0).strong()),
                         );
-
-                        // Day separator
-                        ui.add_sized([width, 1.0], Separator::default().spacing(1.0));
-
-                        // Time slots
-                        ui.horizontal(|ui| {
-                            for i in 0..period_count {
-                                if i > 0 {
-                                    ui.add_sized(
-                                        [1.0, TIMESLOT_HEADER_HEIGHT],
-                                        Separator::default().spacing(1.0),
-                                    );
-                                }
-
-                                let hour = span.start_hour() + i;
-                                ui.add_sized(
-                                    [TIMESLOT_HEADER_WIDTH, TIMESLOT_HEADER_HEIGHT],
-                                    Label::new(format!("{}:00\n{}:50", hour, hour)),
-                                );
-                            }
-                        });
                     });
+
+                // Day separator
+                //ui.add_sized([width, 1.0], Separator::default().spacing(1.0));
+
+                // Time slots
+                ui.horizontal(|ui| {
+                    for i in 0..period_count {
+                        ui.add_sized(
+                            [1.0, TIMESLOT_HEADER_HEIGHT],
+                            Separator::default().spacing(1.0),
+                        );
+
+                        let hour = span.start_hour() + i;
+                        ui.add_sized(
+                            [TIMESLOT_HEADER_WIDTH, TIMESLOT_HEADER_HEIGHT],
+                            Label::new(format!("{}:00\n{}:50", hour, hour)),
+                        );
+
+                        if i == period_count - 1 {
+                            ui.add_sized(
+                                [1.0, TIMESLOT_HEADER_HEIGHT],
+                                Separator::default().spacing(1.0),
+                            );
+                        }
+                    }
                 });
+
+                // Separator between time slots and courses
+                ui.add_sized([width, 1.0], Separator::default().spacing(1.0));
+                ui.add_space(1.0);
+
+                // Render courses in horizontal lines?
+                for y in 0..span.height_in_periods() {
+                    ui.allocate_ui_with_layout(
+                        [width, COURSE_SLOT_HEIGHT].into(),
+                        Layout::left_to_right(Align::Min),
+                        |ui| {
+                            // Compensate for separator thickness
+                            ui.add_space(1.0);
+
+                            let mut x = 0;
+                            while x < period_count {
+                                let record_opt = span.get(&(x as usize, y as usize));
+                                if let Some(record) = record_opt {
+                                    let spanned_periods = record.borrow().periods();
+                                    x += spanned_periods;
+
+                                    Frame::group(ui.style())
+                                        .inner_margin(MarginF32::ZERO)
+                                        .corner_radius(0.0)
+                                        .stroke(Stroke::new(0.5, Color32::WHITE))
+                                        .show(ui, |ui| {
+                                            ui.allocate_ui_with_layout(
+                                                [
+                                                    TIMESLOT_HEADER_WIDTH * spanned_periods as f32
+                                                        + (spanned_periods - 1) as f32, // 1px for separator
+                                                    COURSE_SLOT_HEIGHT,
+                                                ]
+                                                .into(),
+                                                Layout::top_down(Align::Center)
+                                                    .with_main_align(Align::Center)
+                                                    .with_main_justify(true),
+                                                |ui| {
+                                                    ui.set_min_size(ui.available_size());
+                                                    ui.add(
+                                                        Label::new(
+                                                            record
+                                                                .borrow()
+                                                                .course_definition
+                                                                .borrow()
+                                                                .name
+                                                                .as_str(),
+                                                        )
+                                                        .wrap_mode(TextWrapMode::Wrap),
+                                                    );
+                                                },
+                                            );
+                                        });
+                                } else {
+                                    ui.add_space(TIMESLOT_HEADER_WIDTH + 1.0);
+                                    x += 1;
+                                }
+                            }
+
+                            // Compensate for separator
+                            ui.add_space(1.0);
+                        },
+                    );
+                }
+            });
         })
         .response
         .rect;

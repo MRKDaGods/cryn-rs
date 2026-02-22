@@ -1,5 +1,5 @@
 use super::CourseDefinition;
-use chrono::{NaiveTime, Weekday};
+use chrono::{NaiveTime, Timelike, Weekday};
 use std::{cell::RefCell, rc::Rc};
 use strum::EnumString;
 
@@ -74,5 +74,9 @@ impl CourseRecord {
             mullec_index: -1,
             multut_index: -1,
         }
+    }
+
+    pub fn periods(&self) -> u32 {
+        self.end_time.hour() - self.start_time.hour() + 1
     }
 }
