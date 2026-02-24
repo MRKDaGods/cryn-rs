@@ -73,7 +73,7 @@ impl CourseSpan {
             }
 
             // Mark occupied
-            for i in start_pos..end_pos {
+            for i in start_pos..=end_pos {
                 self.ensure_pos_exists(i, y);
                 self.grid[y][i] = true;
             }

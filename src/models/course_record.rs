@@ -1,6 +1,6 @@
 use super::CourseDefinition;
 use chrono::{NaiveTime, Timelike, Weekday};
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, fmt::Display, rc::Rc};
 use strum::EnumString;
 
 #[derive(Debug, EnumString, PartialEq)]
@@ -9,6 +9,30 @@ pub enum CourseRecordType {
     None,
     Lecture,
     Tutorial,
+}
+
+impl CourseRecordType {
+    pub fn short_name(&self) -> &str {
+        match self {
+            CourseRecordType::None => "UNK",
+            CourseRecordType::Lecture => "LEC",
+            CourseRecordType::Tutorial => "TUT",
+        }
+    }
+
+    pub fn long_name(&self) -> &str {
+        match self {
+            CourseRecordType::None => "Unknown",
+            CourseRecordType::Lecture => "Lecture",
+            CourseRecordType::Tutorial => "Tutorial",
+        }
+    }
+}
+
+impl Display for CourseRecordType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.long_name())
+    }
 }
 
 /// Backwards compatibility
@@ -78,5 +102,9 @@ impl CourseRecord {
 
     pub fn periods(&self) -> u32 {
         self.end_time.hour() - self.start_time.hour() + 1
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.status.to_lowercase() != "opened"
     }
 }

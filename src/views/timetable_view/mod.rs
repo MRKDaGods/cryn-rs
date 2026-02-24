@@ -1,3 +1,4 @@
+mod colors;
 mod layout_engine;
 
 use crate::{
@@ -85,19 +86,35 @@ impl View for TimeTableView {
             return;
         }
 
-        // Group has inner margin = 6px
         // Render timetable
         ui.scope(|ui| {
             let style = ui.style_mut();
             style.spacing.item_spacing = egui::vec2(0.0, 0.0);
 
-            ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-                layout_engine::begin(&mut self.layout_context, ui);
+            // Clip to timetable area
+            let rect = ui.available_rect_before_wrap();
+            ui.set_clip_rect(rect);
 
-                for (day, span) in &self.span_map {
-                    layout_engine::render_day(&mut self.layout_context, ui, day, span);
-                }
-            });
+            // Render days
+            egui::ScrollArea::vertical()
+                .auto_shrink([false; 2])
+                .show(ui, |ui| {
+                    ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
+                        layout_engine::begin(&mut self.layout_context, ui);
+
+                        for (day, span) in &self.span_map {
+                            layout_engine::render_day(
+                                &mut self.layout_context,
+                                app_ctx,
+                                ui,
+                                day,
+                                span,
+                            );
+                        }
+
+                        layout_engine::end(&mut self.layout_context, ui);
+                    });
+                });
         });
     }
 }
