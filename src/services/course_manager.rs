@@ -70,8 +70,34 @@ impl CourseManager {
         {
             self.selected_records.remove(record_idx);
         } else {
+            // If we select a lec of say group 1, we should deselect any other lec
+            // We guarantee that there is only 1 selected lec/tutorial per group
+
+            if let Some(other_idx) = self.selected_records.iter().position(|r| {
+                // Same course and same type
+                let our_record = record.borrow();
+                let other_record = r.borrow();
+                Rc::ptr_eq(
+                    &other_record.course_definition,
+                    &our_record.course_definition,
+                ) && other_record.record_type == our_record.record_type
+            }) {
+                // Deselect it
+                self.selected_records.remove(other_idx);
+            }
+
+            // Select our new one
             self.selected_records.push(Rc::clone(record));
         }
+
+        // Update clash cache
+        self.recompute_clashes();
+    }
+
+    /// Removes selected records that have their course definition unselected
+    pub fn update_selected_records(&mut self) {
+        self.selected_records
+            .retain(|record| record.borrow().course_definition.borrow().selected);
 
         // Update clash cache
         self.recompute_clashes();

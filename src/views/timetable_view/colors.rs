@@ -34,24 +34,32 @@ pub enum CourseVisualState {
 
 fn build(base: [u8; 3]) -> CourseColors {
     CourseColors {
-        default: build_interaction(base, 190), // Base gray for text
-        selected: build_interaction([45, 90, 160], 220), // Vivid blue accent
-        clashing: build_interaction([160, 45, 45], 220), // Vivid red accent
-        closed: build_interaction([100, 45, 48], 160), // Muted red-gray
-        group_match: build_interaction([40, 100, 60], 210), // Muted green-gray
-        group_mismatch: build_interaction([120, 75, 30], 210), // Muted orange-gray
+        default: build_interaction(base, 210),                       // Base gray for text
+        selected: build_interaction([211, 84, 0], 230),              // Vivid blue accent
+        clashing: build_interaction_rgb([211, 84, 0], [255, 0, 0]),  // Same color as selected but with red text
+        closed: build_interaction([8, 8, 8], 170),                   // Dark gray
+        group_match: build_interaction([40, 100, 60], 220),          // Muted green-gray
+        group_mismatch: build_interaction([120, 75, 30], 220),       // Muted orange-gray
     }
 }
 
 fn build_interaction(base: [u8; 3], text_gray: u8) -> CourseInteractionColors {
+    build_interaction_rgb(base, [text_gray; 3])
+}
+
+fn build_interaction_rgb(base: [u8; 3], text_rgb: [u8; 3]) -> CourseInteractionColors {
     CourseInteractionColors {
         normal: CourseStateColors {
             bg: Color32::from_rgb(base[0], base[1], base[2]),
-            text: Color32::from_gray(text_gray),
+            text: Color32::from_rgb(text_rgb[0], text_rgb[1], text_rgb[2]),
         },
         hovered: CourseStateColors {
             bg: lighten(base, 18),
-            text: Color32::from_gray(text_gray.saturating_add(30)),
+            text: Color32::from_rgb(
+                text_rgb[0].saturating_add(30),
+                text_rgb[1].saturating_add(30),
+                text_rgb[2].saturating_add(30),
+            ),
         },
         active: CourseStateColors {
             bg: lighten(base, 30),
@@ -71,10 +79,10 @@ fn lighten(base: [u8; 3], amount: u8) -> Color32 {
 // I need better colors ngl
 
 // Muted blue-gray base
-pub static COURSE_COLORS_LEC: LazyLock<CourseColors> = LazyLock::new(|| build([48, 56, 70]));
+pub static COURSE_COLORS_LEC: LazyLock<CourseColors> = LazyLock::new(|| build([52, 73, 94]));
 
 // Muted green-gray base
-pub static COURSE_COLORS_TUT: LazyLock<CourseColors> = LazyLock::new(|| build([56, 64, 58]));
+pub static COURSE_COLORS_TUT: LazyLock<CourseColors> = LazyLock::new(|| build([44, 120, 115]));
 
 // Neutral gray base
 pub static COURSE_COLORS_UNK: LazyLock<CourseColors> = LazyLock::new(|| build([55, 55, 60]));

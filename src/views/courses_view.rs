@@ -139,9 +139,12 @@ impl View for CoursesView {
         }
     }
 
-    fn on_hide(&mut self, _app_ctx: &CrynContext) {
+    fn on_hide(&mut self, app_ctx: &CrynContext) {
         self.hovered_row_idx = None;
         self.selected_row_idx = None;
+
+        // Notify!
+        app_ctx.course_manager.borrow_mut().update_selected_records();
     }
 
     fn on_gui(&mut self, ui: &mut egui::Ui, app_ctx: &CrynContext, _window: &mut dyn Window) {

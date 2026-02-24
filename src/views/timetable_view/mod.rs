@@ -4,10 +4,13 @@ mod layout_engine;
 use crate::{
     CrynContext,
     models::{CourseSpan, OrderedWeekday},
-    views::{CoursesView, View},
+    views::{
+        CoursesView, View,
+        timetable_view::colors::{COURSE_COLORS_LEC, COURSE_COLORS_TUT},
+    },
     windows::{MainWindow, Window},
 };
-use egui::{Align, Label, Layout, RichText, Sense};
+use egui::{Align, Color32, FontId, Label, Layout, RichText, Sense, Ui, Vec2};
 use std::collections::BTreeMap;
 
 pub struct TimeTableView {
@@ -86,6 +89,9 @@ impl View for TimeTableView {
             return;
         }
 
+        // Render legend
+        render_legend(ui);
+
         // Render timetable
         ui.scope(|ui| {
             let style = ui.style_mut();
@@ -117,4 +123,69 @@ impl View for TimeTableView {
                 });
         });
     }
+}
+
+fn render_legend(ui: &mut Ui) {
+    // Top padding
+    ui.add_space(4.0);
+
+    let height = 28.0;
+    let size = Vec2::new(ui.available_width(), height);
+
+    ui.allocate_ui_with_layout(size, Layout::left_to_right(Align::Center), |ui| {
+        let lec_colors = &*COURSE_COLORS_LEC;
+
+        let items = [
+            ("Lecture", lec_colors.default.normal.bg),
+            ("Tutorial", (&*COURSE_COLORS_TUT).default.normal.bg),
+            ("Selected", lec_colors.selected.normal.bg),
+            ("Clashing", lec_colors.clashing.normal.bg),
+            ("Closed", lec_colors.closed.normal.bg),
+            ("Same Group", lec_colors.group_match.normal.bg),
+            ("Diff Group", lec_colors.group_mismatch.normal.bg),
+        ];
+
+        // Measure total width first
+        let swatch_size = 12.0;
+        let inner_spacing = 6.0; // space between swatch and label
+        let item_spacing = 16.0;
+        let total_width: f32 = items
+            .iter()
+            .enumerate()
+            .map(|(i, (label, _))| {
+                let label_width = ui.fonts_mut(|f| {
+                    f.layout_no_wrap(
+                        label.to_string(),
+                        FontId::proportional(11.0),
+                        Color32::WHITE,
+                    )
+                    .size()
+                    .x
+                });
+                let spacing = if i > 0 { item_spacing } else { 0.0 };
+                spacing + swatch_size + inner_spacing + label_width
+            })
+            .sum();
+
+        // Add left padding
+        let available = ui.available_width();
+        if total_width < available {
+            ui.add_space((available - total_width) / 2.0);
+        }
+
+        ui.spacing_mut().item_spacing.x = inner_spacing;
+
+        for (i, (label, color)) in items.iter().enumerate() {
+            if i > 0 {
+                ui.add_space(item_spacing - inner_spacing);
+            }
+
+            let (rect, _) =
+                ui.allocate_exact_size(Vec2::new(swatch_size, swatch_size), Sense::hover());
+            ui.painter().rect_filled(rect, 2.0, *color);
+            ui.label(RichText::new(*label).size(11.0));
+        }
+    });
+
+    ui.separator();
 }

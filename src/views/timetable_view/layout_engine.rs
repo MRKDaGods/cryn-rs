@@ -19,7 +19,7 @@ const DAY_HEADER_HEIGHT: f32 = 42.0;
 
 const COURSE_SLOT_HEIGHT: f32 = 65.5;
 const COURSE_SLOT_PADDING: f32 = 4.0;
-const COURSE_FONT_SIZE: f32 = 12.0;
+const COURSE_FONT_SIZE: f32 = 12.5;
 
 struct LayoutEdges {
     h_edges: Vec<Vec<bool>>,
@@ -268,8 +268,8 @@ fn render_course_slots(
 
             // Shawerly bas w oly 3aleh
 
-            if let Some(record) = record {
-                let visual_state = resolve_visual_state(ctx, app_ctx, record);
+            if let Some(record_rc) = record {
+                let visual_state = resolve_visual_state(ctx, app_ctx, record_rc);
 
                 let x_offset = x as f32 * TIMESLOT_HEADER_WIDTH;
                 let x_start = layout_rect.left() + x_offset;
@@ -285,23 +285,24 @@ fn render_course_slots(
                 let mut response = ui.interact(rect, id, Sense::click());
 
                 if response.hovered() {
-                    ctx.hovered_interaction = Some(Rc::clone(record));
+                    ctx.hovered_interaction = Some(Rc::clone(record_rc));
                 }
                 if response.clicked() {
                     // Toggle selected
                     app_ctx
                         .course_manager
                         .borrow_mut()
-                        .toggle_selected_course(record);
+                        .toggle_selected_course(record_rc);
 
                     println!("sup {:?}", record);
                 }
 
                 // Shadow em babes
-                let record = record.borrow();
+                let record = record_rc.borrow();
 
                 // Get bg and text color based on interaction state
-                let (bg_color, text_color) = get_course_colors(&response, &record, &visual_state);
+                let (bg_color, text_color) =
+                    get_course_colors(app_ctx, &response, record_rc, &record, &visual_state);
 
                 // Render background
                 ui.painter().rect_filled(rect, 0.0, bg_color);
@@ -410,6 +411,16 @@ fn render_course_slots(
                                     ..Default::default()
                                 },
                             );
+
+                            // Strikethrough if both closed and selected
+                            let is_closed_selected =
+                                app_ctx.course_manager.borrow().is_selected(record_rc)
+                                    && record.is_closed();
+                            if is_closed_selected {
+                                job.sections.iter_mut().for_each(|section| {
+                                    section.format.strikethrough = Stroke::new(2.0, Color32::BLACK);
+                                });
+                            }
 
                             ui.add(Label::new(job).wrap_mode(TextWrapMode::Wrap));
                         },
@@ -550,11 +561,6 @@ fn resolve_visual_state(
         }
     }
 
-    // Closed?
-    if borrowed.is_closed() {
-        return CourseVisualState::Closed;
-    }
-
     // Selected + clashing?
     if course_manager.is_selected(record) {
         return if course_manager.is_clashing(record) {
@@ -564,11 +570,18 @@ fn resolve_visual_state(
         };
     }
 
+    // Closed?
+    if borrowed.is_closed() {
+        return CourseVisualState::Closed;
+    }
+
     CourseVisualState::Default
 }
 
 fn get_course_colors(
+    app_ctx: &CrynContext,
     response: &Response,
+    record_rc: &Rc<RefCell<CourseRecord>>, // For clash checking
     record: &CourseRecord,
     visual_state: &CourseVisualState,
 ) -> (Color32, Color32) {
@@ -595,5 +608,13 @@ fn get_course_colors(
         &interaction.normal
     };
 
-    (state.bg, state.text)
+    // Override text color to red if clashing
+    let text_color = app_ctx
+        .course_manager
+        .borrow()
+        .is_clashing(record_rc)
+        .then(|| Color32::RED)
+        .unwrap_or(state.text);
+
+    (state.bg, text_color)
 }
