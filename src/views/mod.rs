@@ -3,11 +3,13 @@ mod placeholder_view;
 mod timetable_view;
 
 pub use courses_view::*;
+use egui::epaint::MarginF32;
 pub use placeholder_view::*;
 pub use timetable_view::*;
 
-use crate::{CrynContext, windows::Window};
-use egui::epaint::MarginF32;
+use crate::CrynContext;
+use crate::windows::Window;
+use crate::windows::main_window::NavbarInterface;
 
 pub trait View {
     /// View name
@@ -31,4 +33,18 @@ pub trait View {
 
     /// Called every frame when the view is active
     fn on_gui(&mut self, ui: &mut egui::Ui, app_ctx: &CrynContext, window: &mut dyn Window);
+
+    /// For custom navbar padding
+    fn navbar_padding(&self) -> Option<f32> {
+        None
+    }
+
+    /// Make use of the empty space in the navbar
+    fn on_navbar_gui(
+        &mut self,
+        _ui: &mut egui::Ui,
+        _app_ctx: &CrynContext,
+        _interface: &NavbarInterface,
+    ) {
+    }
 }

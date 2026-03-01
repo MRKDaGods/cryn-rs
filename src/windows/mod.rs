@@ -1,11 +1,11 @@
 pub mod main_window;
-pub use main_window::MainWindow;
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
 
-use crate::{views::View};
-use std::{
-    any::{Any, TypeId},
-    collections::HashMap,
-};
+pub use main_window::MainWindow;
+pub use main_window::NavbarInterface;
+
+use crate::views::View;
 
 pub trait Window {
     fn views(&self) -> &HashMap<TypeId, Box<dyn View>>;

@@ -1,13 +1,8 @@
+use crate::icons;
+
 use super::TITLEBAR_HEIGHT;
 
 const RESIZE_MARGIN: f32 = 4.0;
-
-// Control button characters
-// segmdl2.ttf
-const ICON_CLOSE: &str = "\u{E10A}";
-const ICON_MAXIMIZE: &str = "\u{E922}";
-const ICON_RESTORE: &str = "\u{E923}";
-const ICON_MINIMIZE: &str = "\u{E921}";
 
 pub fn handle_title_bar_events(ctx: &egui::Context, ui: &mut egui::Ui) {
     let title_bar_rect = ui.max_rect();
@@ -49,7 +44,7 @@ pub fn render_window_controls(ctx: &egui::Context, ui: &mut egui::Ui) {
     render_control_button(
         ctx,
         ui,
-        ICON_CLOSE,
+        icons::CLOSE,
         egui::Color32::from_rgb(232, 17, 35),
         13.0,
         egui::ViewportCommand::Close,
@@ -61,9 +56,9 @@ pub fn render_window_controls(ctx: &egui::Context, ui: &mut egui::Ui) {
         ctx,
         ui,
         if is_maximized {
-            ICON_RESTORE
+            icons::RESTORE
         } else {
-            ICON_MAXIMIZE
+            icons::MAXIMIZE
         },
         egui::Color32::from_rgb(61, 61, 61),
         9.0,
@@ -74,7 +69,7 @@ pub fn render_window_controls(ctx: &egui::Context, ui: &mut egui::Ui) {
     render_control_button(
         ctx,
         ui,
-        ICON_MINIMIZE,
+        icons::MINIMIZE,
         egui::Color32::from_rgb(61, 61, 61),
         9.0,
         egui::ViewportCommand::Minimized(true),

@@ -1,16 +1,17 @@
-use crate::{
-    CrynContext,
-    views::{CoursesView, PlaceholderView, TimeTableView, View},
-    windows::Window,
-};
-use egui::{CentralPanel, Frame, epaint::MarginF32};
-use std::{
-    any::{Any, TypeId},
-    collections::HashMap,
-};
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
+
+use egui::epaint::MarginF32;
+use egui::{CentralPanel, Frame};
+
+use crate::CrynContext;
+use crate::views::{CoursesView, PlaceholderView, TimeTableView, View};
+use crate::windows::Window;
 
 mod nav_bar;
 mod title_bar;
+
+pub use nav_bar::NavbarInterface;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod desktop;
@@ -124,8 +125,8 @@ impl MainWindow {
     fn render_content(&mut self, ctx: &egui::Context, app_ctx: &CrynContext) {
         let view_padding = self
             .get_current_view()
-            .filter(|v| v.padding().is_some())
-            .map_or(MarginF32::ZERO, |v| v.padding().unwrap());
+            .and_then(|v| v.padding())
+            .unwrap_or(MarginF32::ZERO);
 
         CentralPanel::default()
             .frame(
@@ -159,12 +160,10 @@ impl MainWindow {
             });
     }
 
-    fn get_current_view(&mut self) -> Option<&mut Box<dyn View>> {
-        let current_view_id = self
-            .current_view_id
-            .unwrap_or(TypeId::of::<PlaceholderView>());
-
-        self.views.get_mut(&current_view_id)
+    fn get_current_view(&mut self) -> Option<&mut (dyn View + 'static)> {
+        self.current_view_id
+            .and_then(|id| self.views.get_mut(&id))
+            .map(|v| v.as_mut())
     }
 }
 

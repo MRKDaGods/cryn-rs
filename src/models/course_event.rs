@@ -1,0 +1,13 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use crate::models::CourseRecord;
+
+#[derive(Debug, Clone)]
+pub enum CourseEvent {
+    SelectionChanged(Vec<Rc<RefCell<CourseRecord>>>),
+}
+
+pub trait CourseEventListener {
+    fn on_course_event(&mut self, event: &CourseEvent);
+}

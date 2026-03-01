@@ -1,7 +1,11 @@
-use super::CourseDefinition;
+use std::cell::RefCell;
+use std::fmt::Display;
+use std::rc::Rc;
+
 use chrono::{NaiveTime, Timelike, Weekday};
-use std::{cell::RefCell, fmt::Display, rc::Rc};
 use strum::EnumString;
+
+use super::CourseDefinition;
 
 #[derive(Debug, EnumString, PartialEq)]
 #[strum(ascii_case_insensitive)]
@@ -68,43 +72,32 @@ pub struct CourseRecord {
 }
 
 impl CourseRecord {
-    pub fn new(
-        course_definition: Rc<RefCell<CourseDefinition>>,
-        group: i32,
-        record_type: CourseRecordType,
-        day: Weekday,
-        start_time: NaiveTime,
-        end_time: NaiveTime,
-        class_size: i32,
-        enrolled: i32,
-        waiting: i32,
-        status: String,
-        location: String,
-        parse_format: CourseParseFormat,
-    ) -> Self {
-        Self {
-            course_definition,
-            group,
-            record_type,
-            day,
-            start_time,
-            end_time,
-            class_size,
-            enrolled,
-            waiting,
-            status,
-            location,
-            parse_format,
-            mullec_index: -1,
-            multut_index: -1,
-        }
-    }
-
     pub fn periods(&self) -> u32 {
         self.end_time.hour() - self.start_time.hour() + 1
     }
 
     pub fn is_closed(&self) -> bool {
         self.status.to_lowercase() != "opened"
+    }
+}
+
+impl Default for CourseRecord {
+    fn default() -> Self {
+        Self {
+            course_definition: Rc::new(RefCell::new(CourseDefinition::default())),
+            group: 0,
+            record_type: CourseRecordType::None,
+            day: Weekday::Sat,
+            start_time: NaiveTime::default(),
+            end_time: NaiveTime::default(),
+            class_size: 0,
+            enrolled: 0,
+            waiting: 0,
+            status: "Unknown".to_owned(),
+            location: "Unknown".to_owned(),
+            parse_format: CourseParseFormat::Standard,
+            mullec_index: -1,
+            multut_index: -1,
+        }
     }
 }

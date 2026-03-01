@@ -3,7 +3,7 @@ use crate::views::View;
 
 const TITLEBAR_PADDING_H: f32 = 12.0;
 
-pub fn render_title_bar(ctx: &egui::Context, current_view: Option<&Box<dyn View>>) {
+pub fn render_title_bar(ctx: &egui::Context, current_view: Option<&dyn View>) {
     egui::TopBottomPanel::top("titlebar")
         .frame(
             egui::Frame::new()

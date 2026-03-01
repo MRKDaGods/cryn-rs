@@ -1,5 +1,6 @@
-use egui::Color32;
 use std::sync::LazyLock;
+
+use egui::Color32;
 
 pub struct CourseStateColors {
     pub bg: Color32,
@@ -33,37 +34,33 @@ pub enum CourseVisualState {
 }
 
 fn build(base: [u8; 3]) -> CourseColors {
+    let white = Color32::WHITE;
+    let muted = Color32::from_gray(180);
+    let red = Color32::from_rgb(255, 80, 80);
+
     CourseColors {
-        default: build_interaction(base, 210),                       // Base gray for text
-        selected: build_interaction([211, 84, 0], 230),              // Vivid blue accent
-        clashing: build_interaction_rgb([211, 84, 0], [255, 0, 0]),  // Same color as selected but with red text
-        closed: build_interaction([8, 8, 8], 170),                   // Dark gray
-        group_match: build_interaction([40, 100, 60], 220),          // Muted green-gray
-        group_mismatch: build_interaction([120, 75, 30], 220),       // Muted orange-gray
+        default: build_interaction(base, white),
+        selected: build_interaction([211, 84, 0], white),
+        clashing: build_interaction([211, 84, 0], red),
+        closed: build_interaction([8, 8, 8], muted),
+        group_match: build_interaction([40, 100, 60], white),
+        group_mismatch: build_interaction([120, 75, 30], white),
     }
 }
 
-fn build_interaction(base: [u8; 3], text_gray: u8) -> CourseInteractionColors {
-    build_interaction_rgb(base, [text_gray; 3])
-}
-
-fn build_interaction_rgb(base: [u8; 3], text_rgb: [u8; 3]) -> CourseInteractionColors {
+fn build_interaction(base: [u8; 3], text: Color32) -> CourseInteractionColors {
     CourseInteractionColors {
         normal: CourseStateColors {
             bg: Color32::from_rgb(base[0], base[1], base[2]),
-            text: Color32::from_rgb(text_rgb[0], text_rgb[1], text_rgb[2]),
+            text,
         },
         hovered: CourseStateColors {
             bg: lighten(base, 18),
-            text: Color32::from_rgb(
-                text_rgb[0].saturating_add(30),
-                text_rgb[1].saturating_add(30),
-                text_rgb[2].saturating_add(30),
-            ),
+            text,
         },
         active: CourseStateColors {
             bg: lighten(base, 30),
-            text: Color32::WHITE,
+            text,
         },
     }
 }

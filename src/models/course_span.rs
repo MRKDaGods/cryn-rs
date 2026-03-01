@@ -1,12 +1,13 @@
-use crate::models::CourseRecord;
-use chrono::{NaiveTime, Timelike};
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    ops::{Deref, DerefMut},
-    rc::Rc,
-};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
 
+use chrono::{NaiveTime, Timelike};
+
+use crate::models::CourseRecord;
+
+#[derive(Default)]
 pub struct CourseSpan {
     map: HashMap<(usize, usize), Rc<RefCell<CourseRecord>>>,
     records: Vec<Rc<RefCell<CourseRecord>>>,
@@ -17,17 +18,6 @@ pub struct CourseSpan {
 }
 
 impl CourseSpan {
-    pub fn new() -> Self {
-        Self {
-            map: HashMap::new(),
-            records: Vec::new(),
-            min_from: None,
-            max_to: None,
-            grid: Vec::new(),
-            dirty: false,
-        }
-    }
-
     pub fn insert(&mut self, record: &Rc<RefCell<CourseRecord>>) {
         let borrowed = record.borrow();
 
@@ -57,7 +47,7 @@ impl CourseSpan {
 
         // Sort by start time
         self.records.sort_by_key(|r| r.borrow().start_time);
-        let records: Vec<_> = self.records.iter().cloned().collect();
+        let records = self.records.to_vec(); // Clone so we can borrow later
 
         for record in records {
             let borrowed = record.borrow();

@@ -1,10 +1,12 @@
-use crate::{
-    models::{CourseFlags, CourseParseFormat, CourseRecord, CourseRecordType},
-    services::CourseManager,
-};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use chrono::{Duration, NaiveTime, Timelike, Weekday};
 use regex::Regex;
-use std::{cell::RefCell, collections::HashMap, rc::Rc, usize};
+
+use crate::models::{CourseFlags, CourseParseFormat, CourseRecord, CourseRecordType};
+use crate::services::CourseManager;
 
 const MIN_HOUR: u32 = 8;
 
@@ -71,20 +73,21 @@ pub fn parse(course_manager: &mut CourseManager, data: &str) {
 
         course_manager
             .course_records
-            .push(Rc::new(RefCell::new(CourseRecord::new(
-                Rc::clone(&course_definition_rc),
+            .push(Rc::new(RefCell::new(CourseRecord {
+                course_definition: Rc::clone(&course_definition_rc),
                 group,
                 record_type,
                 day,
-                from,
-                to,
+                start_time: from,
+                end_time: to,
                 class_size,
                 enrolled,
                 waiting,
                 status,
                 location,
                 parse_format,
-            ))));
+                ..Default::default()
+            })));
     }
 
     // Sort courses and apply flags
@@ -133,14 +136,10 @@ fn post_process_courses(course_manager: &mut CourseManager) {
                 CourseRecordType::None => return,
             }
 
-            if !group_map.contains_key(&record.group) {
-                group_map.insert(record.group, 0);
-            }
-
             // Increment
-            let new_count = group_map.get(&record.group).unwrap() + 1;
-            *group_map.get_mut(&record.group).unwrap() = new_count;
-            *mul_index = new_count;
+            let count = group_map.entry(record.group).or_insert(0);
+            *count += 1;
+            *mul_index = *count;
         };
 
         // Start counting
@@ -150,7 +149,6 @@ fn post_process_courses(course_manager: &mut CourseManager) {
             .filter(|record| {
                 record.borrow().course_definition.borrow().code == def_rc.borrow().code
             })
-            .into_iter()
             .for_each(|record| {
                 let record = &mut *record.borrow_mut();
                 count_groups(record, CourseRecordType::Lecture);
@@ -171,7 +169,7 @@ fn post_process_courses(course_manager: &mut CourseManager) {
 
 fn fix_timespan(timespan: &mut NaiveTime) {
     if timespan.hour() < MIN_HOUR {
-        *timespan = *timespan + Duration::hours(12);
+        *timespan += Duration::hours(12);
     }
 }
 

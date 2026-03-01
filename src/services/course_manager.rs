@@ -1,24 +1,20 @@
-use super::parsers::standard_course_parser;
-use crate::models::{CourseDefinition, CourseRecord};
-use std::{cell::RefCell, collections::HashSet, rc::Rc};
+use std::cell::RefCell;
+use std::collections::HashSet;
+use std::rc::Rc;
 
+use super::parsers::standard_course_parser;
+use crate::models::{CourseDefinition, CourseEvent, CourseEventListener, CourseRecord};
+
+#[derive(Default)]
 pub struct CourseManager {
     pub course_definitions: Vec<Rc<RefCell<CourseDefinition>>>,
     pub course_records: Vec<Rc<RefCell<CourseRecord>>>, // Shouldve seen this coming lmao
     pub selected_records: Vec<Rc<RefCell<CourseRecord>>>,
     clashing_records: HashSet<*const RefCell<CourseRecord>>,
+    consumers: Vec<Rc<RefCell<dyn CourseEventListener>>>,
 }
 
 impl CourseManager {
-    pub fn new() -> Self {
-        CourseManager {
-            course_definitions: Vec::new(),
-            course_records: Vec::new(),
-            selected_records: Vec::new(),
-            clashing_records: HashSet::new(),
-        }
-    }
-
     pub fn get_or_add_course_definition(
         &mut self,
         code: &str,
@@ -92,6 +88,9 @@ impl CourseManager {
 
         // Update clash cache
         self.recompute_clashes();
+
+        // Notify listeners
+        self.notify_listeners(CourseEvent::SelectionChanged(self.selected_records.clone()));
     }
 
     /// Removes selected records that have their course definition unselected
@@ -101,6 +100,9 @@ impl CourseManager {
 
         // Update clash cache
         self.recompute_clashes();
+
+        // Notify listeners
+        self.notify_listeners(CourseEvent::SelectionChanged(self.selected_records.clone()));
     }
 
     fn recompute_clashes(&mut self) {
@@ -126,5 +128,38 @@ impl CourseManager {
 
     fn times_overlap(a: &CourseRecord, b: &CourseRecord) -> bool {
         a.start_time < b.end_time && b.start_time < a.end_time
+    }
+
+    pub fn register_listener(&mut self, listener: Rc<RefCell<dyn CourseEventListener>>) {
+        self.consumers.push(listener);
+    }
+
+    fn notify_listeners(&mut self, event: CourseEvent) {
+        self.consumers.iter().for_each(|listener| {
+            listener.borrow_mut().on_course_event(&event);
+        });
+    }
+
+    pub fn unregister_listener(&mut self, listener: Rc<RefCell<dyn CourseEventListener>>) {
+        self.consumers.retain(|l| !Rc::ptr_eq(l, &listener));
+    }
+
+    /// Completely deselects all records of the provided course definition
+    pub fn deselect_course_records(
+        &mut self,
+        def_ptr: *const RefCell<CourseDefinition>,
+        is_batch: bool,
+    ) {
+        self.selected_records
+            .retain(|record| def_ptr != Rc::as_ptr(&record.borrow().course_definition));
+
+        // Dont bother if we're removing courses in a batch
+        if !is_batch {
+            // Rebuild clash cache
+            self.recompute_clashes();
+
+            // Notify listeners
+            self.notify_listeners(CourseEvent::SelectionChanged(self.selected_records.clone()));
+        }
     }
 }

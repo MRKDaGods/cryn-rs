@@ -1,7 +1,7 @@
 use bitflags::bitflags;
 
 bitflags! {
-    #[derive(Debug)]
+    #[derive(Debug, Default)]
     pub struct CourseFlags: u8 {
         const None = 0;
         const MultipleLectures = 1 << 0;
@@ -29,7 +29,7 @@ impl std::fmt::Display for CourseFlags {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct CourseDefinition {
     pub code: String,
     pub name: String,
@@ -47,19 +47,6 @@ impl CourseDefinition {
             code: code.to_owned(),
             name: name.to_owned(),
             ..Default::default()
-        }
-    }
-}
-
-impl Default for CourseDefinition {
-    fn default() -> Self {
-        Self {
-            code: "AMMR123".to_owned(),
-            name: "ammar wkda".to_owned(),
-            flags: CourseFlags::None,
-            selected: false,
-            lecture_count: 0,
-            tutorial_count: 0,
         }
     }
 }

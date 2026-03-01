@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use chrono::Weekday;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -23,9 +25,9 @@ impl From<Weekday> for OrderedWeekday {
     }
 }
 
-impl ToString for OrderedWeekday {
-    fn to_string(&self) -> String {
-        match self.0 {
+impl Display for OrderedWeekday {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self.0 {
             Weekday::Sat => "Saturday",
             Weekday::Sun => "Sunday",
             Weekday::Mon => "Monday",
@@ -33,7 +35,8 @@ impl ToString for OrderedWeekday {
             Weekday::Wed => "Wednesday",
             Weekday::Thu => "Thursday",
             Weekday::Fri => "Friday",
-        }
-        .to_owned()
+        };
+
+        write!(f, "{}", s)
     }
 }

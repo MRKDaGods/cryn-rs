@@ -1,5 +1,6 @@
 use super::View;
-use crate::{CrynContext, windows::Window};
+use crate::CrynContext;
+use crate::windows::Window;
 
 pub struct PlaceholderView;
 

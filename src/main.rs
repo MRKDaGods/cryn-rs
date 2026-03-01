@@ -5,6 +5,6 @@ mod platform;
 
 fn main() {
     //cryn_rs::services::course_manager::test_courses();
-    
+
     platform::run();
 }

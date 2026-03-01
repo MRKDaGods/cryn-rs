@@ -1,20 +1,24 @@
-use super::View;
-use crate::{
-    CrynContext,
-    models::CourseDefinition,
-    windows::{Window, main_window::CONTENT_PADDING},
-};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use egui::epaint::MarginF32;
 use egui::{
     Align, CentralPanel, Frame, Label, Layout, Response, Sense, TextEdit, TextWrapMode,
-    TopBottomPanel, epaint::MarginF32,
+    TopBottomPanel,
 };
 use egui_extras::{Column, TableBuilder};
-use std::{cell::RefCell, rc::Rc};
+
+use super::View;
+use crate::CrynContext;
+use crate::models::CourseDefinition;
+use crate::windows::main_window::CONTENT_PADDING;
+use crate::windows::{NavbarInterface, Window};
 
 const SEARCH_HEIGHT: f32 = 35.0;
 const HEADER_HEIGHT: f32 = 25.0;
 const ROW_HEIGHT: f32 = 30.0;
 
+#[derive(Default)]
 pub struct CoursesView {
     hovered_row_idx: Option<usize>,
     selected_row_idx: Option<usize>,
@@ -26,17 +30,10 @@ pub struct CoursesView {
 
 impl CoursesView {
     pub fn new() -> Self {
-        Self {
-            hovered_row_idx: None,
-            selected_row_idx: None,
-            any_hovered: false,
-            search_query: String::new(),
-            last_search_query: String::new(),
-            filtered_indices: Vec::new(),
-        }
+        Self::default()
     }
 
-    fn update_filter(&mut self, definitions: &Vec<Rc<RefCell<CourseDefinition>>>) {
+    fn update_filter(&mut self, definitions: &[Rc<RefCell<CourseDefinition>>]) {
         let query = self.search_query.to_lowercase();
         if query == self.last_search_query {
             return;
@@ -83,7 +80,7 @@ impl CoursesView {
         self.last_search_query = query;
     }
 
-    fn create_default_indices(&mut self, definitions: &Vec<Rc<RefCell<CourseDefinition>>>) {
+    fn create_default_indices(&mut self, definitions: &[Rc<RefCell<CourseDefinition>>]) {
         // Sort by selection, then by code
         let mut indices: Vec<usize> = (0..definitions.len()).collect();
         indices.sort_by(|&a, &b| {
@@ -144,7 +141,10 @@ impl View for CoursesView {
         self.selected_row_idx = None;
 
         // Notify!
-        app_ctx.course_manager.borrow_mut().update_selected_records();
+        app_ctx
+            .course_manager
+            .borrow_mut()
+            .update_selected_records();
     }
 
     fn on_gui(&mut self, ui: &mut egui::Ui, app_ctx: &CrynContext, _window: &mut dyn Window) {
@@ -335,5 +335,20 @@ impl View for CoursesView {
         if !self.any_hovered {
             self.hovered_row_idx = None;
         }
+    }
+
+    fn navbar_padding(&self) -> Option<f32> {
+        Some(0.0) // No padding, append Import button to navbar
+    }
+
+    fn on_navbar_gui(
+        &mut self,
+        ui: &mut egui::Ui,
+        _app_ctx: &CrynContext,
+        interface: &NavbarInterface,
+    ) {
+        // Wesh endir hachkak rijali
+        // Taste fr
+        (interface.render_button_fn)(ui, crate::icons::IMPORT, "Import List", None);
     }
 }

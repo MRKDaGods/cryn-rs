@@ -1,13 +1,16 @@
-use super::colors::*;
-use crate::{
-    CrynContext,
-    models::{CourseRecord, CourseRecordType, CourseSpan, OrderedWeekday},
-};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use egui::{
     Align, Color32, CursorIcon, FontId, Label, Layout, Rect, Response, RichText, Sense, Stroke,
     TextWrapMode, Ui, UiBuilder, Vec2,
 };
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+
+use super::colors::*;
+use crate::CrynContext;
+use crate::models::{CourseRecord, CourseRecordType, CourseSpan, OrderedWeekday};
+use crate::utils::ui::get_trunacted_text;
 
 const TIMETABLE_PADDING: Vec2 = Vec2::new(8.0, 8.0);
 const TIMETABLE_SPACING: Vec2 = Vec2::new(12.0, 32.0);
@@ -18,7 +21,7 @@ const TIMESLOT_HEADER_HEIGHT: f32 = 43.0;
 const DAY_HEADER_HEIGHT: f32 = 42.0;
 
 const COURSE_SLOT_HEIGHT: f32 = 65.5;
-const COURSE_SLOT_PADDING: f32 = 4.0;
+const COURSE_SLOT_PADDING: f32 = 8.0;
 const COURSE_FONT_SIZE: f32 = 12.5;
 
 struct LayoutEdges {
@@ -26,12 +29,22 @@ struct LayoutEdges {
     v_edges: Vec<Vec<bool>>,
 }
 
+/// Number of header rows before course rows begin in the edge grid
+/// Row 0 = day header top, row 1 = timeslot header top, row 2 = timeslot header bottom = courses top
+const EDGE_HEADER_ROWS: usize = 2;
+
 impl LayoutEdges {
     fn new(period_count: usize, num_rows: usize) -> Self {
         Self {
-            h_edges: vec![vec![false; period_count]; num_rows + 3], // +3: Day top, timeslot top, timeslot bottom
-            v_edges: vec![vec![false; period_count + 1]; num_rows + 2], // +1 for rightmost edge, +2 for day header and timeslot header
+            // +3 rows: day top, timeslot top, timeslot bottom, then one per course row bottom
+            h_edges: vec![vec![false; period_count]; num_rows + 3],
+            // +1 column for rightmost edge, +2 rows for day header and timeslot header
+            v_edges: vec![vec![false; period_count + 1]; num_rows + EDGE_HEADER_ROWS],
         }
+    }
+
+    fn v_row_count(&self) -> usize {
+        self.v_edges.len()
     }
 }
 
@@ -40,6 +53,7 @@ pub struct LayoutContext {
     is_layout_pass: bool,
     container_rect: Rect,
     day_index: usize,
+
     /////////////// tb elgamel yo2morny b eh?
     x: f32,
     y: f32,
@@ -56,8 +70,8 @@ pub struct LayoutContext {
     hovered_interaction: Option<Rc<RefCell<CourseRecord>>>,
 }
 
-impl LayoutContext {
-    pub fn new() -> Self {
+impl Default for LayoutContext {
+    fn default() -> Self {
         Self {
             sizes: HashMap::new(),
             is_layout_pass: false,
@@ -117,23 +131,31 @@ fn do_layout(ctx: &mut LayoutContext, _ui: &mut Ui, day: &OrderedWeekday, span: 
     //  | Time|Slot|Header |
     //  --------------------
 
-    // Day header and timeslot header horizontal borders
-    for x in 0..period_count {
-        h_edges[0][x] = true; // Day header top border
-        h_edges[1][x] = true; // Timeslot header top border
-        h_edges[2][x] = true; // Timeslot header bottom border
-    }
+    // Day header and timeslot header borders
 
+    // Horizontal edges
+    // First 3 rows
+    // 0 - Day header top border
+    // 1 - Timeslot header top border
+    // 2 - Timeslot header bottom border
+    h_edges
+        .iter_mut()
+        .take(3)
+        .for_each(|edges| edges.fill(true));
+
+    // Vertical edges
     v_edges[0][0] = true; // Day header left border
     v_edges[0][period_count] = true; // Day header right border
 
     // Timeslot vertical borders and separators
-    for x in 0..=period_count {
-        v_edges[1][x] = true;
-    }
+    v_edges[1].fill(true);
 
     // Course slot edges
     for y in 0..num_rows {
+        let h_top = y + EDGE_HEADER_ROWS; // Top border of this course row
+        let h_bot = h_top + 1; // Bottom border
+        let v_row = y + EDGE_HEADER_ROWS; // Vertical edge row for this course row
+
         let mut x = 0;
         while x < period_count {
             // https://github.com/MRKDaGods/CUFE-Dry-Run/blob/main/CUFE-Dry-Run/Views/TimeTableView.cs#L259
@@ -141,17 +163,15 @@ fn do_layout(ctx: &mut LayoutContext, _ui: &mut Ui, day: &OrderedWeekday, span: 
             if let Some(record) = span.get(&(x, y)) {
                 let spanned = record.borrow().periods() as usize;
 
-                // Top and bottom border
-                for x in x..x + spanned {
-                    h_edges[y + 2][x] = true;
-                    h_edges[y + 3][x] = true;
+                // Top and bottom horizontal borders
+                for row in [h_top, h_bot] {
+                    h_edges[row][x..x + spanned].fill(true);
                 }
 
-                // Left and right border
-                v_edges[y + 2][x] = true; // Left border
-                v_edges[y + 2][x + spanned] = true; // Right border
+                // Left and right vertical borders
+                v_edges[v_row][x] = true;
+                v_edges[v_row][x + spanned] = true;
 
-                // Skip spanned columns
                 x += spanned;
             } else {
                 x += 1;
@@ -160,7 +180,7 @@ fn do_layout(ctx: &mut LayoutContext, _ui: &mut Ui, day: &OrderedWeekday, span: 
     }
 
     ctx.layout_edges
-        .insert(day.clone(), LayoutEdges { h_edges, v_edges });
+        .insert(*day, LayoutEdges { h_edges, v_edges });
 
     // Compute layout size
     let layout_width = period_count as f32 * TIMESLOT_HEADER_WIDTH;
@@ -168,7 +188,7 @@ fn do_layout(ctx: &mut LayoutContext, _ui: &mut Ui, day: &OrderedWeekday, span: 
         DAY_HEADER_HEIGHT + TIMESLOT_HEADER_HEIGHT + num_rows as f32 * COURSE_SLOT_HEIGHT;
     let size = Vec2::new(layout_width, layout_height);
 
-    ctx.sizes.insert(day.clone(), size);
+    ctx.sizes.insert(*day, size);
     ctx.day_index += 1;
 }
 
@@ -185,7 +205,7 @@ pub fn render_day(
     }
 
     // Do we need to wrap?
-    let layout_size = ctx.sizes.get(day).unwrap().clone();
+    let layout_size = *ctx.sizes.get(day).unwrap();
     if ctx.day_index > 0 && needs_wrap(ctx, &layout_size) {
         wrap(ctx);
     }
@@ -281,7 +301,7 @@ fn render_course_slots(
                 );
 
                 // Register interaction
-                let id = ui.id().with(("course", day.clone(), y, x));
+                let id = ui.id().with(("course", *day, y, x));
                 let mut response = ui.interact(rect, id, Sense::click());
 
                 if response.hovered() {
@@ -301,8 +321,7 @@ fn render_course_slots(
                 let record = record_rc.borrow();
 
                 // Get bg and text color based on interaction state
-                let (bg_color, text_color) =
-                    get_course_colors(app_ctx, &response, record_rc, &record, &visual_state);
+                let (bg_color, text_color) = get_course_colors(&response, &record, &visual_state);
 
                 // Render background
                 ui.painter().rect_filled(rect, 0.0, bg_color);
@@ -340,35 +359,13 @@ fn render_course_slots(
                             .with_main_align(Align::Center)
                             .with_main_justify(true),
                         |ui| {
-                            let mut course_name = record.course_definition.borrow().name.clone();
-
-                            // Measure how many lines the course name takes
-                            // if more than 2, truncate
-                            let rows = &ui
-                                .painter()
-                                .layout(
-                                    course_name.clone(),
-                                    FontId::proportional(COURSE_FONT_SIZE),
-                                    text_color,
-                                    padded_rect.width(),
-                                )
-                                .rows;
-
-                            // Truncate and add ellipsis if needed
-                            if rows.len() > 2 {
-                                course_name = String::new();
-
-                                for row in rows.iter().take(2) {
-                                    course_name.push_str(&row.text());
-                                }
-
-                                // Remove last 3 chars and add ellipsis
-                                course_name = course_name
-                                    .chars()
-                                    .take(course_name.len().saturating_sub(3))
-                                    .collect();
-                                course_name.push_str("...");
-                            }
+                            let course_name = get_trunacted_text(
+                                ui,
+                                &record.course_definition.borrow().name,
+                                COURSE_FONT_SIZE,
+                                padded_rect.width(),
+                                2,
+                            );
 
                             let mut job = egui::text::LayoutJob::default();
                             job.append(
@@ -441,11 +438,18 @@ fn render_layout_edges(
     span: &CourseSpan,
 ) {
     let period_count = span.period_count() as usize;
-    let num_rows = span.height_in_periods();
-
-    let LayoutEdges { h_edges, v_edges } = ctx.layout_edges.get(day).unwrap();
+    let edges = ctx.layout_edges.get(day).unwrap();
     let timeslots_y = layout_rect.top() + DAY_HEADER_HEIGHT;
     let courses_y = timeslots_y + TIMESLOT_HEADER_HEIGHT;
+
+    // Convert an edge-grid row index to a pixel y coordinate
+    let y_idx_to_pixel = |idx: usize| -> f32 {
+        match idx {
+            0 => layout_rect.top(),
+            1 => timeslots_y,
+            _ => courses_y + (idx - EDGE_HEADER_ROWS) as f32 * COURSE_SLOT_HEIGHT,
+        }
+    };
 
     let stroke = Stroke::new(
         1.0,
@@ -454,57 +458,48 @@ fn render_layout_edges(
     let painter = ui.painter();
 
     // Draw horizontal edges
-    for y_idx in 0..=num_rows + 2 {
-        // Where are we drawing?
-        let y = match y_idx {
-            0 => layout_rect.top(),
-            1 => timeslots_y,
-            2 => courses_y,
-            _ => courses_y + (y_idx - 2) as f32 * COURSE_SLOT_HEIGHT,
-        };
+    // We iterate to period_count + 1 to flush any open runs
+    for (y_idx, row) in edges.h_edges.iter().enumerate() {
+        let y = y_idx_to_pixel(y_idx);
+        let mut run_start: Option<usize> = None;
 
-        let mut start_x: Option<usize> = None;
+        // Iterate to period_count inclusive
+        #[allow(clippy::needless_range_loop)]
         for x_idx in 0..=period_count {
-            let is_edge = x_idx < period_count && h_edges[y_idx][x_idx];
-            if is_edge {
-                if start_x.is_none() {
-                    start_x = Some(x_idx);
+            let active = x_idx < period_count && row[x_idx];
+            if active {
+                if run_start.is_none() {
+                    run_start = Some(x_idx);
                 }
-            } else if let Some(sx) = start_x {
+            } else if let Some(sx) = run_start {
                 let px1 = layout_rect.left() + sx as f32 * TIMESLOT_HEADER_WIDTH;
                 let px2 = layout_rect.left() + x_idx as f32 * TIMESLOT_HEADER_WIDTH;
                 painter.line_segment([egui::pos2(px1, y), egui::pos2(px2, y)], stroke);
-                start_x = None;
+                run_start = None;
             }
         }
     }
 
     // Draw vertical edges
-    for x_idx in 0..=period_count {
-        let x = layout_rect.left() + x_idx as f32 * TIMESLOT_HEADER_WIDTH;
+    // We iterate to v_row_count + 1 to flush any open runs aswell
+    let v_row_count = edges.v_row_count();
+    let v_col_count = edges.v_edges.first().map_or(0, |r| r.len());
 
-        let mut start_y: Option<usize> = None;
-        for y_idx in 0..=num_rows + 2 {
-            let is_edge = y_idx < num_rows + 2 && v_edges[y_idx][x_idx];
-            if is_edge {
-                if start_y.is_none() {
-                    start_y = Some(y_idx);
+    for x_idx in 0..v_col_count {
+        let x = layout_rect.left() + x_idx as f32 * TIMESLOT_HEADER_WIDTH;
+        let mut run_start: Option<usize> = None;
+
+        for y_idx in 0..=v_row_count {
+            let active = y_idx < v_row_count && edges.v_edges[y_idx][x_idx];
+            if active {
+                if run_start.is_none() {
+                    run_start = Some(y_idx);
                 }
-            } else if let Some(sy) = start_y {
-                let py1 = match sy {
-                    0 => layout_rect.top(),
-                    1 => timeslots_y,
-                    2 => courses_y,
-                    _ => courses_y + (sy - 2) as f32 * COURSE_SLOT_HEIGHT,
-                };
-                let py2 = match y_idx {
-                    0 => layout_rect.top(),
-                    1 => timeslots_y,
-                    2 => courses_y,
-                    _ => courses_y + (y_idx - 2) as f32 * COURSE_SLOT_HEIGHT,
-                };
+            } else if let Some(sy) = run_start {
+                let py1 = y_idx_to_pixel(sy);
+                let py2 = y_idx_to_pixel(y_idx);
                 painter.line_segment([egui::pos2(x, py1), egui::pos2(x, py2)], stroke);
-                start_y = None;
+                run_start = None;
             }
         }
     }
@@ -542,22 +537,22 @@ fn resolve_visual_state(
     let course_manager = app_ctx.course_manager.borrow_mut();
 
     // Hovered? Check group relationship
-    if let Some(hovered) = &ctx.hovered_render {
-        if !Rc::ptr_eq(record, hovered) {
-            let hovered_borrowed = hovered.borrow();
+    if let Some(hovered) = &ctx.hovered_render
+        && !Rc::ptr_eq(record, hovered)
+    {
+        let hovered_borrowed = hovered.borrow();
 
-            let same_course = Rc::ptr_eq(
-                &borrowed.course_definition,
-                &hovered_borrowed.course_definition,
-            );
+        let same_course = Rc::ptr_eq(
+            &borrowed.course_definition,
+            &hovered_borrowed.course_definition,
+        );
 
-            if same_course {
-                return if borrowed.group == hovered_borrowed.group {
-                    CourseVisualState::GroupMatch
-                } else {
-                    CourseVisualState::GroupMismatch
-                };
-            }
+        if same_course {
+            return if borrowed.group == hovered_borrowed.group {
+                CourseVisualState::GroupMatch
+            } else {
+                CourseVisualState::GroupMismatch
+            };
         }
     }
 
@@ -579,9 +574,7 @@ fn resolve_visual_state(
 }
 
 fn get_course_colors(
-    app_ctx: &CrynContext,
     response: &Response,
-    record_rc: &Rc<RefCell<CourseRecord>>, // For clash checking
     record: &CourseRecord,
     visual_state: &CourseVisualState,
 ) -> (Color32, Color32) {
@@ -608,13 +601,5 @@ fn get_course_colors(
         &interaction.normal
     };
 
-    // Override text color to red if clashing
-    let text_color = app_ctx
-        .course_manager
-        .borrow()
-        .is_clashing(record_rc)
-        .then(|| Color32::RED)
-        .unwrap_or(state.text);
-
-    (state.bg, text_color)
+    (state.bg, state.text)
 }

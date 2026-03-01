@@ -1,5 +1,10 @@
-use crate::{services::CourseManager, utils, windows::MainWindow};
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::Arc;
+
+use crate::services::CourseManager;
+use crate::utils;
+use crate::windows::MainWindow;
 
 pub struct CrynContext {
     pub course_manager: Rc<RefCell<CourseManager>>,
@@ -75,7 +80,7 @@ impl CrynApp {
     }
 
     fn initialize_course_manager() -> Rc<RefCell<CourseManager>> {
-        let mut course_manager = CourseManager::new();
+        let mut course_manager = CourseManager::default();
         let data = include_str!("../assets/data/sample_courses.txt");
         course_manager.parse_courses(data);
 
