@@ -1,4 +1,4 @@
-use super::View;
+use super::{MainWindowView, View};
 use crate::CrynContext;
 use crate::windows::Window;
 
@@ -21,3 +21,5 @@ impl View for PlaceholderView {
         ui.heading("Placeholder View");
     }
 }
+
+impl MainWindowView for PlaceholderView {}

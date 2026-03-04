@@ -1,11 +1,11 @@
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 use std::collections::HashMap;
 
 use egui::epaint::MarginF32;
 use egui::{CentralPanel, Frame};
 
 use crate::CrynContext;
-use crate::views::{CoursesView, PlaceholderView, TimeTableView, View};
+use crate::views::{CoursesView, MainWindowView, PlaceholderView, TimeTableView};
 use crate::windows::Window;
 
 mod nav_bar;
@@ -22,8 +22,9 @@ const NAVBAR_HEIGHT: f32 = 42.0;
 #[allow(unused)]
 pub const CONTENT_PADDING: f32 = 8.0;
 
+#[derive(Default)]
 pub struct MainWindow {
-    views: HashMap<TypeId, Box<dyn View>>,
+    views: HashMap<TypeId, Box<dyn MainWindowView>>,
     current_view_id: Option<TypeId>,
 
     /// Post-render target view switch request
@@ -34,30 +35,11 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
-    pub fn new(app_ctx: &CrynContext) -> Self {
-        let mut window = Self {
-            views: HashMap::new(),
-            current_view_id: None,
-            requested_target_view_id: None,
-            is_rendering_content: false,
-        };
-
-        // Register views
-        window.register_view(TimeTableView::new());
-        window.register_view(CoursesView::new());
-        window.register_view(PlaceholderView);
-
-        // TT view by def
-        window.switch_to_view::<TimeTableView>(app_ctx);
-
-        window
-    }
-
-    fn register_view<V: View + 'static>(&mut self, view: V) {
+    fn register_view<V: MainWindowView + 'static>(&mut self, view: V) {
         self.views.insert(TypeId::of::<V>(), Box::new(view));
     }
 
-    pub fn switch_to_view<V: View + 'static>(&mut self, app_ctx: &CrynContext) {
+    pub fn switch_to_view<V: MainWindowView + 'static>(&mut self, app_ctx: &CrynContext) {
         if self.is_rendering_content {
             // Defer view switch until after rendering
             self.request_switch_to_view::<V>();
@@ -94,31 +76,8 @@ impl MainWindow {
         target_view.on_show(app_ctx);
     }
 
-    pub fn request_switch_to_view<V: View + 'static>(&mut self) {
+    pub fn request_switch_to_view<V: MainWindowView + 'static>(&mut self) {
         self.requested_target_view_id = Some(TypeId::of::<V>());
-    }
-
-    /// Main render method
-    pub fn render(&mut self, ctx: &egui::Context, app_ctx: &CrynContext) {
-        #[cfg(not(target_arch = "wasm32"))]
-        desktop::handle_resize_events(ctx);
-
-        // Title bar and window controls
-        title_bar::render_title_bar(ctx, self.get_current_view().as_deref());
-
-        // Nav bar
-        nav_bar::render_nav_bar(self, ctx, app_ctx);
-
-        // Content
-        self.is_rendering_content = true;
-        self.render_content(ctx, app_ctx);
-        self.is_rendering_content = false;
-
-        // Handle post-render requested view switch
-        if let Some(target_view_id) = self.requested_target_view_id {
-            self.switch_to_view_internal(target_view_id, app_ctx);
-            self.requested_target_view_id = None;
-        }
     }
 
     /// Render the main content
@@ -135,7 +94,7 @@ impl MainWindow {
                     .fill(ctx.style().visuals.window_fill),
             )
             .show(ctx, |ui| {
-                // Render current view
+                // Render current view of ammar magnus
                 if let Some(mut view) = self
                     .views
                     .remove(&self.current_view_id.unwrap_or(TypeId::of::<()>()))
@@ -160,7 +119,7 @@ impl MainWindow {
             });
     }
 
-    fn get_current_view(&mut self) -> Option<&mut (dyn View + 'static)> {
+    fn get_current_view(&mut self) -> Option<&mut dyn MainWindowView> {
         self.current_view_id
             .and_then(|id| self.views.get_mut(&id))
             .map(|v| v.as_mut())
@@ -168,15 +127,36 @@ impl MainWindow {
 }
 
 impl Window for MainWindow {
-    fn as_any(&self) -> &dyn Any {
-        self
+    fn initialize(&mut self, app_ctx: &CrynContext) {
+        // Register views
+        self.register_view(TimeTableView::new());
+        self.register_view(CoursesView::new());
+        self.register_view(PlaceholderView);
+
+        // TT view by def
+        self.switch_to_view::<TimeTableView>(app_ctx);
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+    /// Main render method
+    fn render(&mut self, ctx: &egui::Context, app_ctx: &CrynContext) {
+        #[cfg(not(target_arch = "wasm32"))]
+        desktop::handle_resize_events(ctx);
 
-    fn views(&self) -> &HashMap<TypeId, Box<dyn View>> {
-        &self.views
+        // Title bar and window controls
+        title_bar::render_title_bar(ctx, self.get_current_view().as_deref());
+
+        // Nav bar
+        nav_bar::render_nav_bar(self, ctx, app_ctx);
+
+        // Content
+        self.is_rendering_content = true;
+        self.render_content(ctx, app_ctx);
+        self.is_rendering_content = false;
+
+        // Handle post-render requested view switch
+        if let Some(target_view_id) = self.requested_target_view_id {
+            self.switch_to_view_internal(target_view_id, app_ctx);
+            self.requested_target_view_id = None;
+        }
     }
 }

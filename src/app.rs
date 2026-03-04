@@ -3,19 +3,41 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::services::CourseManager;
-use crate::utils;
-use crate::windows::MainWindow;
+use crate::utils::{self, Signal};
+use crate::windows::{ImportWindow, MainWindow, Window};
 
 pub struct CrynContext {
     pub course_manager: Rc<RefCell<CourseManager>>,
+    show_import_window: Signal,
+    dispose_import_window: Signal,
+}
+
+impl CrynContext {
+    pub fn new(course_manager: Rc<RefCell<CourseManager>>) -> Self {
+        Self {
+            course_manager,
+            show_import_window: Signal::default(),
+            dispose_import_window: Signal::default(),
+        }
+    }
+
+    pub fn show_import_window(&self) {
+        self.show_import_window.request();
+    }
+
+    pub fn dispose_import_window(&self) {
+        self.dispose_import_window.request();
+    }
 }
 
 pub struct CrynApp {
-    /* Windows */
     main_window: MainWindow,
 
-    /* Whatever */
-    _course_manager: Rc<RefCell<CourseManager>>,
+    /// Windows arent like views.
+    /// They are only created when requested, and destroyed when closed.
+    /// Hence keep import window as option.
+    import_window: Option<ImportWindow>,
+
     context: CrynContext,
 }
 
@@ -23,11 +45,6 @@ impl CrynApp {
     /// App ctor
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         utils::log("Cryn started");
-
-        // Configure theme
-        //let mut visuals = egui::Visuals::dark();
-        //visuals.override_text_color = Some(egui::Color32::WHITE);
-        //cc.egui_ctx.set_visuals(visuals);
 
         // Fonts
         Self::setup_fonts(cc);
@@ -38,13 +55,14 @@ impl CrynApp {
         });
 
         let course_manager = Self::initialize_course_manager(); /* Original ref */
-        let app_ctx = CrynContext {
-            course_manager: Rc::clone(&course_manager),
-        };
+        let app_ctx = CrynContext::new(course_manager);
+
+        let mut main_window = MainWindow::default();
+        main_window.initialize(&app_ctx);
 
         Self {
-            main_window: MainWindow::new(&app_ctx),
-            _course_manager: course_manager,
+            main_window,
+            import_window: None,
             context: app_ctx,
         }
     }
@@ -83,19 +101,6 @@ impl CrynApp {
         let mut course_manager = CourseManager::default();
         let data = include_str!("../assets/data/sample_courses.txt");
         course_manager.parse_courses(data);
-
-        // utils::log(
-        //     format!(
-        //         "Courses: {:?}",
-        //         course_manager
-        //             .course_records
-        //             .iter()
-        //             .filter(|x| !x.borrow().course_definition.borrow().flags.is_empty())
-        //             .collect::<Vec<_>>()
-        //     )
-        //     .as_str(),
-        // );
-
         Rc::new(RefCell::new(course_manager))
     }
 }
@@ -105,5 +110,31 @@ impl eframe::App for CrynApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Render main window
         self.main_window.render(ctx, &self.context);
+
+        // Check if import window requested
+        let import_window_requested = self.context.show_import_window.consume();
+        if import_window_requested && self.import_window.is_none() {
+            // Create import window!
+            let import_window = ImportWindow::default();
+            self.import_window = Some(import_window);
+
+            // Clear stray dispose reqs
+            self.context.dispose_import_window.consume();
+        }
+
+        // Render import window if shown
+        if let Some(import_window) = &mut self.import_window {
+            import_window.render(ctx, &self.context);
+
+            // Check if import window requested to close
+            let import_window_disposed = self.context.dispose_import_window.consume();
+            if import_window_disposed {
+                // Dispose window
+                import_window.on_dispose(&self.context);
+
+                // Rip
+                self.import_window = None;
+            }
+        }
     }
 }

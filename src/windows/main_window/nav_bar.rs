@@ -10,14 +10,14 @@ use egui::{
 };
 
 use super::{MainWindow, NAVBAR_HEIGHT};
-use crate::views::{CoursesView, PlaceholderView, TimeTableView, View};
+use crate::views::{CoursesView, MainWindowView, PlaceholderView, TimeTableView};
 use crate::{CrynContext, icons};
 
 /// Padding for view-specific content
 const NAVBAR_VIEW_CONTENT_PADDING: f32 = 12.0;
 
 pub struct NavbarInterface<'a> {
-    pub render_button_fn: &'a dyn Fn(&mut Ui, &str, &str, Option<f32>),
+    pub render_button_fn: &'a dyn Fn(&mut Ui, &str, &str, Option<f32>, Option<&dyn Fn()>),
 }
 
 pub fn render_nav_bar(main_window: &mut MainWindow, ctx: &Context, app_ctx: &CrynContext) {
@@ -25,8 +25,8 @@ pub fn render_nav_bar(main_window: &mut MainWindow, ctx: &Context, app_ctx: &Cry
 
     // Setup interface
     let navbar_interface = NavbarInterface {
-        render_button_fn: &|ui, icon, label, requested_width| {
-            render_button(
+        render_button_fn: &|ui, icon, label, requested_width, on_click| {
+            let clicked = render_button(
                 None,
                 ui,
                 icon,
@@ -34,7 +34,11 @@ pub fn render_nav_bar(main_window: &mut MainWindow, ctx: &Context, app_ctx: &Cry
                 requested_width.unwrap_or(button_width),
                 None::<fn(&mut MainWindow)>,
                 None,
-            )
+            );
+
+            if clicked && let Some(on_click) = on_click {
+                on_click();
+            }
         },
     };
 
@@ -72,6 +76,7 @@ pub fn render_nav_bar(main_window: &mut MainWindow, ctx: &Context, app_ctx: &Cry
                         "Time Table",
                         button_width,
                     );
+
                     render_button_view::<CoursesView>(
                         main_window,
                         app_ctx,
@@ -120,7 +125,7 @@ pub fn render_nav_bar(main_window: &mut MainWindow, ctx: &Context, app_ctx: &Cry
         });
 }
 
-fn render_button_view<V: View + 'static>(
+fn render_button_view<V: MainWindowView + 'static>(
     main_window: &mut MainWindow,
     app_ctx: &CrynContext,
     ui: &mut Ui,
@@ -147,11 +152,15 @@ fn render_button(
     icon: &str,
     label: &str,
     button_width: f32,
-    on_click: Option<impl FnOnce(&mut MainWindow)>,
+    on_click: Option<impl Fn(&mut MainWindow)>,
     is_active: Option<bool>,
-) {
+) -> bool {
+    let hover_id = ui.id().with((label, "hover"));
+    let is_hovered = ui.data(|d| d.get_temp::<bool>(hover_id).unwrap_or(false));
+
     let fore_color = match is_active {
         Some(true) => ui.style().visuals.strong_text_color(),
+        _ if is_hovered => ui.style().visuals.widgets.hovered.fg_stroke.color,
         _ => ui.style().visuals.text_color(),
     };
 
@@ -190,10 +199,17 @@ fn render_button(
         ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
     }
 
-    if response.clicked()
+    // Store hover state
+    ui.data_mut(|d| d.insert_temp(hover_id, response.hovered()));
+
+    let clicked = response.clicked();
+
+    if clicked
         && let Some(on_click) = on_click
         && let Some(main_window) = main_window
     {
         on_click(main_window);
     }
+
+    clicked
 }

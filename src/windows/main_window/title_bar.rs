@@ -1,9 +1,9 @@
 use super::TITLEBAR_HEIGHT;
-use crate::views::View;
+use crate::views::MainWindowView;
 
 const TITLEBAR_PADDING_H: f32 = 12.0;
 
-pub fn render_title_bar(ctx: &egui::Context, current_view: Option<&dyn View>) {
+pub fn render_title_bar(ctx: &egui::Context, current_view: Option<&dyn MainWindowView>) {
     egui::TopBottomPanel::top("titlebar")
         .frame(
             egui::Frame::new()

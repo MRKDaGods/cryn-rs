@@ -8,10 +8,11 @@ pub use placeholder_view::*;
 pub use timetable_view::*;
 
 use crate::CrynContext;
+use crate::traits::AsAny;
 use crate::windows::Window;
 use crate::windows::main_window::NavbarInterface;
 
-pub trait View {
+pub trait View: AsAny {
     /// View name
     fn name(&self) -> &str;
 
@@ -33,7 +34,9 @@ pub trait View {
 
     /// Called every frame when the view is active
     fn on_gui(&mut self, ui: &mut egui::Ui, app_ctx: &CrynContext, window: &mut dyn Window);
+}
 
+pub trait MainWindowView: View {
     /// For custom navbar padding
     fn navbar_padding(&self) -> Option<f32> {
         None

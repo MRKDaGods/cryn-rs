@@ -13,7 +13,7 @@ use crate::models::{
 };
 use crate::utils::ui::get_trunacted_text;
 use crate::views::timetable_view::colors::{COURSE_COLORS_LEC, COURSE_COLORS_TUT};
-use crate::views::{CoursesView, View};
+use crate::views::{CoursesView, MainWindowView, View};
 use crate::windows::{MainWindow, NavbarInterface, Window};
 use crate::{CrynContext, icons};
 
@@ -62,12 +62,8 @@ impl View for TimeTableView {
         // Rebuild spans
         self.span_map.values_mut().for_each(|span| span.rebuild());
 
-        self.span_map.iter().for_each(|(day, span)| {
-            println!("{}: {} periods", day, span.period_count());
-        });
-
         // Recompute everything
-        layout_engine::invalidate_layout(&mut self.layout_context);
+        self.layout_context.invalidate();
 
         // Register listener
         app_ctx.course_manager.borrow_mut().register_listener(
@@ -83,55 +79,13 @@ impl View for TimeTableView {
     }
 
     fn on_gui(&mut self, ui: &mut egui::Ui, app_ctx: &CrynContext, window: &mut dyn Window) {
-        // hmmm
-        // elnas 3yza eh
-        // elnas bt3ml eh
-        // 3en safra wltanya 7amra
-        // ololy a3ml eh
-        // 3en safra wltanya khadra ;)
-        // ololy a3ml ehhhhhh
-
         // If no courses, show placeholder
         if self.span_map.is_empty() {
-            // Bgd egui saye2
-            ui.vertical_centered(|ui| {
-                ui.add_space(ui.available_height() * 0.45);
-
-                // Switch to course view button
-                if ui
-                    .add(
-                        Label::new(
-                            RichText::new("Select courses to start")
-                                .size(32.0)
-                                .heading(),
-                        )
-                        .sense(Sense::click()),
-                    )
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .clicked()
-                    && let Some(window) = window.as_any_mut().downcast_mut::<MainWindow>()
-                {
-                    window.switch_to_view::<CoursesView>(app_ctx);
-                }
-
-                ui.add_space(4.0);
-
-                // Import button
-                if ui
-                    .add(
-                        Label::new(RichText::new("or Import").size(21.0).weak())
-                            .sense(Sense::click()),
-                    )
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .clicked()
-                {
-                    // TODO
-                }
-            });
+            render_landing(ui, app_ctx, window);
             return;
         }
 
-        // Render legend
+        // Main view: legend + timetable
         render_legend(ui);
 
         // Render timetable
@@ -148,24 +102,20 @@ impl View for TimeTableView {
                 .auto_shrink([false; 2])
                 .show(ui, |ui| {
                     ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-                        layout_engine::begin(&mut self.layout_context, ui);
+                        self.layout_context.begin(ui);
 
                         for (day, span) in &self.span_map {
-                            layout_engine::render_day(
-                                &mut self.layout_context,
-                                app_ctx,
-                                ui,
-                                day,
-                                span,
-                            );
+                            self.layout_context.render_day(app_ctx, ui, day, span);
                         }
 
-                        layout_engine::end(&mut self.layout_context, ui);
+                        self.layout_context.end(ui);
                     });
                 });
         });
     }
+}
 
+impl MainWindowView for TimeTableView {
     fn on_navbar_gui(&mut self, ui: &mut Ui, app_ctx: &CrynContext, _interface: &NavbarInterface) {
         let listener_state = self.listener_state.borrow();
         if listener_state.course_summaries.is_empty() {
@@ -307,7 +257,12 @@ impl View for TimeTableView {
                             .collect();
                     }
                 });
-                cols[2].vertical_centered_justified(|ui| if ui.button("Import").clicked() {});
+                cols[2].vertical_centered_justified(|ui| {
+                    if ui.button("Import").clicked() {
+                        app_ctx.show_import_window();
+                        ui.close_kind(egui::UiKind::Tooltip);
+                    }
+                });
             });
 
             // Apply deselections
@@ -323,6 +278,112 @@ impl View for TimeTableView {
             }
         });
     }
+}
+
+fn render_landing(ui: &mut Ui, app_ctx: &CrynContext, window: &mut dyn Window) {
+    let button_width = 240.0;
+    let button_height = 38.0;
+    let button_corner_radius = 6.0;
+
+    ui.vertical_centered(|ui| {
+        ui.add_space(ui.available_height() * 0.28);
+
+        // Title
+        ui.label(
+            RichText::new(format!("{} Cryn", icons::CALENDAR))
+                .size(42.0)
+                .strong(),
+        );
+
+        ui.add_space(6.0);
+
+        // Acronym
+        let accent = ui.visuals().strong_text_color();
+        let muted = ui.visuals().weak_text_color();
+        let font_size = 16.0;
+
+        ui.horizontal(|ui| {
+            // Measure and center
+            let display_text = "CUFE  Dry  Run";
+            let total_width = ui.fonts_mut(|f| {
+                f.layout_no_wrap(
+                    display_text.to_string(),
+                    FontId::proportional(font_size),
+                    Color32::WHITE,
+                )
+                .size()
+                .x
+            });
+            let available = ui.available_width();
+            if total_width < available {
+                ui.add_space((available - total_width) / 2.0);
+            }
+
+            ui.spacing_mut().item_spacing.x = 0.0;
+
+            // "C" accented, "UFE" muted
+            ui.label(RichText::new("C").size(font_size).color(accent).strong());
+            ui.label(RichText::new("UFE").size(font_size).color(muted));
+
+            ui.add_space(8.0);
+
+            // "D" muted, "r" accented, "y" accented
+            ui.label(RichText::new("D").size(font_size).color(muted));
+            ui.label(RichText::new("r").size(font_size).color(accent).strong());
+            ui.label(RichText::new("y").size(font_size).color(accent).strong());
+
+            ui.add_space(8.0);
+
+            // "Ru" muted, "n" accented
+            ui.label(RichText::new("Ru").size(font_size).color(muted));
+            ui.label(RichText::new("n").size(font_size).color(accent).strong());
+        });
+
+        ui.add_space(32.0);
+
+        // Primary: Select Courses
+        let select_btn = ui.add_sized(
+            [button_width, button_height],
+            egui::Button::new(
+                RichText::new(format!("{}  Select Courses", icons::LIBRARY)).size(15.0),
+            )
+            .corner_radius(button_corner_radius),
+        );
+
+        if select_btn.clicked()
+            && let Some(window) = window.as_any_mut().downcast_mut::<MainWindow>()
+        {
+            window.switch_to_view::<CoursesView>(app_ctx);
+        }
+
+        ui.add_space(10.0);
+
+        // Divider
+        ui.label(
+            RichText::new("or")
+                .size(13.0)
+                .color(Color32::from_gray(120)),
+        );
+
+        ui.add_space(10.0);
+
+        // Secondary: Import
+        let import_btn = ui.add_sized(
+            [button_width, button_height],
+            egui::Button::new(
+                RichText::new(format!("{}  Import Timetable", icons::IMPORT))
+                    .size(15.0)
+                    .color(Color32::from_gray(200)),
+            )
+            .corner_radius(button_corner_radius)
+            .stroke(egui::Stroke::new(1.0, Color32::from_gray(100)))
+            .fill(Color32::from_gray(30)),
+        );
+
+        if import_btn.clicked() {
+            app_ctx.show_import_window();
+        }
+    });
 }
 
 fn render_legend(ui: &mut Ui) {

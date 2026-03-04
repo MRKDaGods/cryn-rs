@@ -11,6 +11,7 @@ use egui_extras::{Column, TableBuilder};
 use super::View;
 use crate::CrynContext;
 use crate::models::CourseDefinition;
+use crate::views::MainWindowView;
 use crate::windows::main_window::CONTENT_PADDING;
 use crate::windows::{NavbarInterface, Window};
 
@@ -336,7 +337,9 @@ impl View for CoursesView {
             self.hovered_row_idx = None;
         }
     }
+}
 
+impl MainWindowView for CoursesView {
     fn navbar_padding(&self) -> Option<f32> {
         Some(0.0) // No padding, append Import button to navbar
     }
@@ -344,11 +347,19 @@ impl View for CoursesView {
     fn on_navbar_gui(
         &mut self,
         ui: &mut egui::Ui,
-        _app_ctx: &CrynContext,
+        app_ctx: &CrynContext,
         interface: &NavbarInterface,
     ) {
         // Wesh endir hachkak rijali
         // Taste fr
-        (interface.render_button_fn)(ui, crate::icons::IMPORT, "Import List", None);
+        (interface.render_button_fn)(
+            ui,
+            crate::icons::IMPORT,
+            "Import List",
+            None,
+            Some(&|| {
+                app_ctx.show_import_window();
+            }),
+        );
     }
 }

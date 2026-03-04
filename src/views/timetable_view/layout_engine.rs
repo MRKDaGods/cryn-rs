@@ -30,6 +30,7 @@ struct LayoutEdges {
 }
 
 /// Number of header rows before course rows begin in the edge grid
+/// 
 /// Row 0 = day header top, row 1 = timeslot header top, row 2 = timeslot header bottom = courses top
 const EDGE_HEADER_ROWS: usize = 2;
 
@@ -62,10 +63,12 @@ pub struct LayoutContext {
     layout_edges: HashMap<OrderedWeekday, LayoutEdges>,
 
     /// Last frame hovered course record
-    /// Render pass
+    /// 
+    /// Rendering pass
     hovered_render: Option<Rc<RefCell<CourseRecord>>>,
 
     /// Current frame hovered course record
+    /// 
     /// Interaction pass
     hovered_interaction: Option<Rc<RefCell<CourseRecord>>>,
 }
@@ -87,146 +90,295 @@ impl Default for LayoutContext {
     }
 }
 
-pub fn invalidate_layout(ctx: &mut LayoutContext) {
-    ctx.sizes.clear();
-    ctx.layout_edges.clear();
-}
+impl LayoutContext {
+    /// Clear cached layout data, forcing a recompute on the next frame
+    pub fn invalidate(&mut self) {
+        self.sizes.clear();
+        self.layout_edges.clear();
+    }
 
-pub fn begin(ctx: &mut LayoutContext, ui: &mut Ui) {
-    ctx.container_rect = ui.available_rect_before_wrap();
-    ctx.is_layout_pass = ctx.sizes.is_empty();
-    ctx.day_index = 0;
+    /// Initialize layout state for the new frame
+    pub fn begin(&mut self, ui: &mut Ui) {
+        self.container_rect = ui.available_rect_before_wrap();
+        self.is_layout_pass = self.sizes.is_empty();
+        self.day_index = 0;
 
-    ctx.x = ctx.container_rect.left() + TIMETABLE_PADDING.x;
-    ctx.y = ctx.container_rect.top() + TIMETABLE_PADDING.y;
-    ctx.max_layout_height = 0.0;
+        self.x = self.container_rect.left() + TIMETABLE_PADDING.x;
+        self.y = self.container_rect.top() + TIMETABLE_PADDING.y;
+        self.max_layout_height = 0.0;
 
-    ctx.hovered_render = ctx.hovered_interaction.take();
-}
+        self.hovered_render = self.hovered_interaction.take();
+    }
 
-pub fn end(ctx: &mut LayoutContext, ui: &mut Ui) {
-    // We've been doing layout ourselves
-    // Let egui know how much space we took for scrolling
-    let total_height =
-        ctx.y + ctx.max_layout_height + TIMETABLE_PADDING.y - ctx.container_rect.top();
+    /// Finalize the frame
+    pub fn end(&self, ui: &mut Ui) {
+        let total_height =
+            self.y + self.max_layout_height + TIMETABLE_PADDING.y - self.container_rect.top();
+        ui.allocate_space(Vec2::new(0.0, total_height));
+    }
 
-    ui.allocate_space(Vec2::new(0.0, total_height));
-}
+    /// Render a single day column (or compute its layout on the first pass)
+    pub fn render_day(
+        &mut self,
+        app_ctx: &CrynContext,
+        ui: &mut Ui,
+        day: &OrderedWeekday,
+        span: &CourseSpan,
+    ) {
+        if self.is_layout_pass {
+            self.compute_layout(day, span);
+            return;
+        }
 
-fn do_layout(ctx: &mut LayoutContext, _ui: &mut Ui, day: &OrderedWeekday, span: &CourseSpan) {
-    // Not really layout, just compute edges and calc size for render pass
-    // Keeping ui for backwards compatibility
+        let layout_size = *self.sizes.get(day).unwrap();
+        if self.day_index > 0 && self.needs_wrap(&layout_size) {
+            self.wrap_to_next_row();
+        }
 
-    let period_count = span.period_count() as usize;
-    let num_rows = span.height_in_periods();
+        let layout_rect = self.calculate_rect(&layout_size);
+        self.advance(&layout_rect);
 
-    let LayoutEdges {
-        mut h_edges,
-        mut v_edges,
-    } = LayoutEdges::new(period_count, num_rows);
+        render_day_header(ui, &layout_rect, day);
+        render_timeslots_header(ui, &layout_rect, span);
+        self.render_course_slots(app_ctx, ui, &layout_rect, day, span);
+        self.render_layout_edges(ui, &layout_rect, day, span);
 
-    //  --------------------
-    //  | Day Header       |
-    //  --------------------
-    //  | Time|Slot|Header |
-    //  --------------------
+        self.day_index += 1;
+    }
 
-    // Day header and timeslot header borders
+    /// First-pass: compute edge grids and day sizes without rendering
+    fn compute_layout(&mut self, day: &OrderedWeekday, span: &CourseSpan) {
+        let period_count = span.period_count() as usize;
+        let num_rows = span.height_in_periods();
 
-    // Horizontal edges
-    // First 3 rows
-    // 0 - Day header top border
-    // 1 - Timeslot header top border
-    // 2 - Timeslot header bottom border
-    h_edges
-        .iter_mut()
-        .take(3)
-        .for_each(|edges| edges.fill(true));
+        let LayoutEdges {
+            mut h_edges,
+            mut v_edges,
+        } = LayoutEdges::new(period_count, num_rows);
 
-    // Vertical edges
-    v_edges[0][0] = true; // Day header left border
-    v_edges[0][period_count] = true; // Day header right border
+        //  --------------------
+        //  | Day Header       |
+        //  --------------------
+        //  | Time|Slot|Header |
+        //  --------------------
 
-    // Timeslot vertical borders and separators
-    v_edges[1].fill(true);
+        // Horizontal edges for the 3 header rows
+        h_edges
+            .iter_mut()
+            .take(3)
+            .for_each(|edges| edges.fill(true));
 
-    // Course slot edges
-    for y in 0..num_rows {
-        let h_top = y + EDGE_HEADER_ROWS; // Top border of this course row
-        let h_bot = h_top + 1; // Bottom border
-        let v_row = y + EDGE_HEADER_ROWS; // Vertical edge row for this course row
+        // Day header vertical borders
+        v_edges[0][0] = true;
+        v_edges[0][period_count] = true;
 
-        let mut x = 0;
-        while x < period_count {
-            // https://github.com/MRKDaGods/CUFE-Dry-Run/blob/main/CUFE-Dry-Run/Views/TimeTableView.cs#L259
-            // Do we have a course that starts at (x,y)?
-            if let Some(record) = span.get(&(x, y)) {
-                let spanned = record.borrow().periods() as usize;
+        // Timeslot vertical borders
+        v_edges[1].fill(true);
 
-                // Top and bottom horizontal borders
-                for row in [h_top, h_bot] {
-                    h_edges[row][x..x + spanned].fill(true);
+        // Course slot edges
+        for y in 0..num_rows {
+            let h_top = y + EDGE_HEADER_ROWS;
+            let h_bot = h_top + 1;
+            let v_row = y + EDGE_HEADER_ROWS;
+
+            let mut x = 0;
+            while x < period_count {
+                // https://github.com/MRKDaGods/CUFE-Dry-Run/blob/main/CUFE-Dry-Run/Views/TimeTableView.cs#L259
+                // Do we have a course that starts at (x,y)?
+                if let Some(record) = span.get(&(x, y)) {
+                    let spanned = record.borrow().periods() as usize;
+
+                    for row in [h_top, h_bot] {
+                        h_edges[row][x..x + spanned].fill(true);
+                    }
+
+                    v_edges[v_row][x] = true;
+                    v_edges[v_row][x + spanned] = true;
+
+                    x += spanned;
+                } else {
+                    x += 1;
+                }
+            }
+        }
+
+        self.layout_edges
+            .insert(*day, LayoutEdges { h_edges, v_edges });
+
+        let layout_width = period_count as f32 * TIMESLOT_HEADER_WIDTH;
+        let layout_height =
+            DAY_HEADER_HEIGHT + TIMESLOT_HEADER_HEIGHT + num_rows as f32 * COURSE_SLOT_HEIGHT;
+
+        self.sizes
+            .insert(*day, Vec2::new(layout_width, layout_height));
+        self.day_index += 1;
+    }
+
+    fn needs_wrap(&self, size: &Vec2) -> bool {
+        let available_width = self.container_rect.width() - self.x - TIMETABLE_PADDING.x;
+        size.x > available_width
+    }
+
+    fn wrap_to_next_row(&mut self) {
+        self.x = self.container_rect.left() + TIMETABLE_PADDING.x;
+        self.y += self.max_layout_height + TIMETABLE_SPACING.y;
+        self.max_layout_height = 0.0;
+    }
+
+    fn advance(&mut self, rect: &Rect) {
+        self.x += rect.width() + TIMETABLE_SPACING.x;
+        self.max_layout_height = self.max_layout_height.max(rect.height());
+    }
+
+    fn calculate_rect(&self, size: &Vec2) -> Rect {
+        Rect {
+            min: (self.x, self.y).into(),
+            max: (self.x + size.x, self.y + size.y).into(),
+        }
+    }
+
+    fn render_course_slots(
+        &mut self,
+        app_ctx: &CrynContext,
+        ui: &mut Ui,
+        layout_rect: &Rect,
+        day: &OrderedWeekday,
+        span: &CourseSpan,
+    ) {
+        let num_rows = span.height_in_periods();
+        let start_y = layout_rect.top() + DAY_HEADER_HEIGHT + TIMESLOT_HEADER_HEIGHT;
+        let period_count = span.period_count() as usize;
+
+        for y in 0..num_rows {
+            let row_y_start = start_y + y as f32 * COURSE_SLOT_HEIGHT;
+
+            let mut x = 0;
+            while x < period_count {
+                let record = span.get(&(x, y));
+                let spanned = record
+                    .as_ref()
+                    .map_or(1, |rec| rec.borrow().periods() as usize);
+
+                if let Some(record_rc) = record {
+                    let visual_state =
+                        resolve_visual_state(&self.hovered_render, app_ctx, record_rc);
+
+                    let x_start = layout_rect.left() + x as f32 * TIMESLOT_HEADER_WIDTH;
+                    let course_width = spanned as f32 * TIMESLOT_HEADER_WIDTH;
+                    let rect = Rect::from_min_size(
+                        egui::pos2(x_start, row_y_start),
+                        [course_width, COURSE_SLOT_HEIGHT].into(),
+                    );
+
+                    // Interaction
+                    let id = ui.id().with(("course", *day, y, x));
+                    let response = ui.interact(rect, id, Sense::click());
+
+                    if response.hovered() {
+                        self.hovered_interaction = Some(Rc::clone(record_rc));
+                    }
+                    if response.clicked() {
+                        app_ctx
+                            .course_manager
+                            .borrow_mut()
+                            .toggle_selected_course(record_rc);
+                    }
+
+                    let record = record_rc.borrow();
+                    let (bg_color, text_color) =
+                        get_course_colors(&response, &record, &visual_state);
+
+                    // Background
+                    ui.painter().rect_filled(rect, 0.0, bg_color);
+
+                    // Cursor + tooltip
+                    response
+                        .on_hover_cursor(CursorIcon::PointingHand)
+                        .on_hover_ui_at_pointer(|ui| {
+                            render_course_tooltip(ui, &record);
+                        });
+
+                    // Text content
+                    let is_closed_selected = app_ctx.course_manager.borrow().is_selected(record_rc)
+                        && record.is_closed();
+                    render_course_text(ui, rect, &record, text_color, is_closed_selected);
                 }
 
-                // Left and right vertical borders
-                v_edges[v_row][x] = true;
-                v_edges[v_row][x + spanned] = true;
-
                 x += spanned;
-            } else {
-                x += 1;
             }
         }
     }
 
-    ctx.layout_edges
-        .insert(*day, LayoutEdges { h_edges, v_edges });
+    fn render_layout_edges(
+        &self,
+        ui: &mut Ui,
+        layout_rect: &Rect,
+        day: &OrderedWeekday,
+        span: &CourseSpan,
+    ) {
+        let period_count = span.period_count() as usize;
+        let edges = self.layout_edges.get(day).unwrap();
+        let timeslots_y = layout_rect.top() + DAY_HEADER_HEIGHT;
+        let courses_y = timeslots_y + TIMESLOT_HEADER_HEIGHT;
 
-    // Compute layout size
-    let layout_width = period_count as f32 * TIMESLOT_HEADER_WIDTH;
-    let layout_height =
-        DAY_HEADER_HEIGHT + TIMESLOT_HEADER_HEIGHT + num_rows as f32 * COURSE_SLOT_HEIGHT;
-    let size = Vec2::new(layout_width, layout_height);
+        let y_idx_to_pixel = |idx: usize| -> f32 {
+            match idx {
+                0 => layout_rect.top(),
+                1 => timeslots_y,
+                _ => courses_y + (idx - EDGE_HEADER_ROWS) as f32 * COURSE_SLOT_HEIGHT,
+            }
+        };
 
-    ctx.sizes.insert(*day, size);
-    ctx.day_index += 1;
-}
+        let stroke = Stroke::new(
+            1.0,
+            ui.style().visuals.widgets.noninteractive.bg_stroke.color,
+        );
+        let painter = ui.painter();
 
-pub fn render_day(
-    ctx: &mut LayoutContext,
-    app_ctx: &CrynContext,
-    ui: &mut Ui,
-    day: &OrderedWeekday,
-    span: &CourseSpan,
-) {
-    if ctx.is_layout_pass {
-        do_layout(ctx, ui, day, span);
-        return;
+        // Horizontal runs
+        for (y_idx, row) in edges.h_edges.iter().enumerate() {
+            let y = y_idx_to_pixel(y_idx);
+            let mut run_start: Option<usize> = None;
+
+            // Iterate one past the end to flush any open run
+            for (x_idx, &active_flag) in row.iter().chain(&[false]).enumerate() {
+                let active = x_idx < period_count && active_flag;
+                if active {
+                    if run_start.is_none() {
+                        run_start = Some(x_idx);
+                    }
+                } else if let Some(sx) = run_start {
+                    let px1 = layout_rect.left() + sx as f32 * TIMESLOT_HEADER_WIDTH;
+                    let px2 = layout_rect.left() + x_idx as f32 * TIMESLOT_HEADER_WIDTH;
+                    painter.line_segment([egui::pos2(px1, y), egui::pos2(px2, y)], stroke);
+                    run_start = None;
+                }
+            }
+        }
+
+        // Vertical runs
+        let v_row_count = edges.v_row_count();
+        let v_col_count = edges.v_edges.first().map_or(0, |r| r.len());
+
+        for x_idx in 0..v_col_count {
+            let x = layout_rect.left() + x_idx as f32 * TIMESLOT_HEADER_WIDTH;
+            let mut run_start: Option<usize> = None;
+
+            for y_idx in 0..=v_row_count {
+                let active = y_idx < v_row_count && edges.v_edges[y_idx][x_idx];
+                if active {
+                    if run_start.is_none() {
+                        run_start = Some(y_idx);
+                    }
+                } else if let Some(sy) = run_start {
+                    let py1 = y_idx_to_pixel(sy);
+                    let py2 = y_idx_to_pixel(y_idx);
+                    painter.line_segment([egui::pos2(x, py1), egui::pos2(x, py2)], stroke);
+                    run_start = None;
+                }
+            }
+        }
     }
-
-    // Do we need to wrap?
-    let layout_size = *ctx.sizes.get(day).unwrap();
-    if ctx.day_index > 0 && needs_wrap(ctx, &layout_size) {
-        wrap(ctx);
-    }
-
-    // Calc rect and advance cursor
-    let layout_rect = calculate_rect(ctx, &layout_size);
-    advance(ctx, &layout_rect);
-
-    // Render Day header
-    render_day_header(ui, &layout_rect, day);
-
-    // Time slots
-    render_timeslots_header(ui, &layout_rect, span);
-
-    // Render course slots
-    render_course_slots(ctx, app_ctx, ui, &layout_rect, day, span);
-
-    // Draw borders
-    render_layout_edges(ctx, ui, &layout_rect, day, span);
-
-    ctx.day_index += 1;
 }
 
 fn render_day_header(ui: &mut Ui, layout_rect: &Rect, day: &OrderedWeekday) {
@@ -263,285 +415,115 @@ fn render_timeslots_header(ui: &mut Ui, layout_rect: &Rect, span: &CourseSpan) {
     }
 }
 
-fn render_course_slots(
-    ctx: &mut LayoutContext,
-    app_ctx: &CrynContext,
+fn render_course_tooltip(ui: &mut Ui, record: &CourseRecord) {
+    ui.strong(&record.course_definition.borrow().code);
+    ui.strong(&record.course_definition.borrow().name);
+    ui.label(format!(
+        "{} G{}\nEnrolled: {}/{}\n{}\n\n{}",
+        record.record_type.long_name(),
+        record.group,
+        record.enrolled,
+        record.class_size,
+        &record.location,
+        record.status.to_uppercase()
+    ));
+}
+
+fn render_course_text(
     ui: &mut Ui,
-    layout_rect: &Rect,
-    day: &OrderedWeekday,
-    span: &CourseSpan,
+    slot_rect: Rect,
+    record: &CourseRecord,
+    text_color: Color32,
+    is_closed_selected: bool,
 ) {
-    let num_rows = span.height_in_periods();
-    let start_y = layout_rect.top() + DAY_HEADER_HEIGHT + TIMESLOT_HEADER_HEIGHT;
-    let period_count = span.period_count() as usize;
+    let padded_rect = slot_rect.shrink(COURSE_SLOT_PADDING);
 
-    for y in 0..num_rows {
-        let y_offset = y as f32 * COURSE_SLOT_HEIGHT;
-        let row_y_start = start_y + y_offset;
+    ui.scope_builder(UiBuilder::new().max_rect(padded_rect), |ui| {
+        ui.set_clip_rect(padded_rect.intersect(ui.clip_rect()));
 
-        let mut x = 0;
-        while x < period_count {
-            let record = span.get(&(x, y));
-            let spanned = record
-                .as_ref()
-                .map_or(1, |rec| rec.borrow().periods() as usize);
-
-            // Shawerly bas w oly 3aleh
-
-            if let Some(record_rc) = record {
-                let visual_state = resolve_visual_state(ctx, app_ctx, record_rc);
-
-                let x_offset = x as f32 * TIMESLOT_HEADER_WIDTH;
-                let x_start = layout_rect.left() + x_offset;
-
-                let course_width = spanned as f32 * TIMESLOT_HEADER_WIDTH;
-                let rect = Rect::from_min_size(
-                    egui::pos2(x_start, row_y_start),
-                    [course_width, COURSE_SLOT_HEIGHT].into(),
+        ui.with_layout(
+            Layout::top_down(Align::Center)
+                .with_main_align(Align::Center)
+                .with_main_justify(true),
+            |ui| {
+                let course_name = get_trunacted_text(
+                    ui,
+                    &record.course_definition.borrow().name,
+                    COURSE_FONT_SIZE,
+                    padded_rect.width(),
+                    2,
                 );
 
-                // Register interaction
-                let id = ui.id().with(("course", *day, y, x));
-                let mut response = ui.interact(rect, id, Sense::click());
+                let mut job = egui::text::LayoutJob::default();
 
-                if response.hovered() {
-                    ctx.hovered_interaction = Some(Rc::clone(record_rc));
+                // Course name
+                job.append(
+                    format!("{}\n", course_name).as_str(),
+                    0.0,
+                    egui::TextFormat {
+                        font_id: FontId::proportional(COURSE_FONT_SIZE),
+                        color: text_color,
+                        line_height: Some(14.0),
+                        ..Default::default()
+                    },
+                );
+
+                // Spacer
+                job.append(
+                    "\n",
+                    0.0,
+                    egui::TextFormat {
+                        font_id: FontId::proportional(COURSE_FONT_SIZE),
+                        color: text_color,
+                        line_height: Some(4.0),
+                        ..Default::default()
+                    },
+                );
+
+                // Details line
+                let details = format!(
+                    "{} G{} ({}/{})",
+                    record.record_type.short_name(),
+                    record.group,
+                    record.enrolled,
+                    record.class_size
+                );
+                job.append(
+                    &details,
+                    0.0,
+                    egui::TextFormat {
+                        font_id: FontId::proportional(COURSE_FONT_SIZE - 0.5),
+                        color: text_color,
+                        ..Default::default()
+                    },
+                );
+
+                // Strikethrough if closed and selected
+                if is_closed_selected {
+                    job.sections.iter_mut().for_each(|section| {
+                        section.format.strikethrough = Stroke::new(2.0, Color32::BLACK);
+                    });
                 }
-                if response.clicked() {
-                    // Toggle selected
-                    app_ctx
-                        .course_manager
-                        .borrow_mut()
-                        .toggle_selected_course(record_rc);
 
-                    println!("sup {:?}", record);
-                }
-
-                // Shadow em babes
-                let record = record_rc.borrow();
-
-                // Get bg and text color based on interaction state
-                let (bg_color, text_color) = get_course_colors(&response, &record, &visual_state);
-
-                // Render background
-                ui.painter().rect_filled(rect, 0.0, bg_color);
-
-                // Change cursor on hover
-                response = response.on_hover_cursor(CursorIcon::PointingHand);
-
-                // Show tooltip on hover
-                response = response.on_hover_ui_at_pointer(|ui| {
-                    ui.strong(&record.course_definition.borrow().code);
-                    ui.strong(&record.course_definition.borrow().name);
-                    ui.label(format!(
-                        "{} G{}\nEnrolled: {}/{}\n{}\n\n{}",
-                        record.record_type.long_name(),
-                        record.group,
-                        record.enrolled,
-                        record.class_size,
-                        &record.location,
-                        record.status.to_uppercase()
-                    ));
-
-                    // Debug visual state
-                    ui.separator();
-                    ui.label(format!("Visual State: {:?}", visual_state));
-                });
-
-                // Render text
-                let padded_rect = rect.shrink(COURSE_SLOT_PADDING);
-                ui.scope_builder(UiBuilder::new().max_rect(padded_rect), |ui| {
-                    // Clip text w/respect to scroll area clip
-                    ui.set_clip_rect(padded_rect.intersect(ui.clip_rect()));
-
-                    ui.with_layout(
-                        Layout::top_down(Align::Center)
-                            .with_main_align(Align::Center)
-                            .with_main_justify(true),
-                        |ui| {
-                            let course_name = get_trunacted_text(
-                                ui,
-                                &record.course_definition.borrow().name,
-                                COURSE_FONT_SIZE,
-                                padded_rect.width(),
-                                2,
-                            );
-
-                            let mut job = egui::text::LayoutJob::default();
-                            job.append(
-                                format!("{}\n", course_name).as_str(),
-                                0.0,
-                                egui::TextFormat {
-                                    font_id: FontId::proportional(COURSE_FONT_SIZE),
-                                    color: text_color,
-                                    line_height: Some(14.0),
-                                    ..Default::default()
-                                },
-                            );
-
-                            // Add extra vertical spacing
-                            job.append(
-                                "\n",
-                                0.0,
-                                egui::TextFormat {
-                                    font_id: FontId::proportional(COURSE_FONT_SIZE),
-                                    color: text_color,
-                                    line_height: Some(4.0),
-                                    ..Default::default()
-                                },
-                            );
-
-                            // Course type and group on second line
-                            let details = format!(
-                                "{} G{} ({}/{})",
-                                record.record_type.short_name(),
-                                record.group,
-                                record.enrolled,
-                                record.class_size
-                            );
-                            job.append(
-                                &details,
-                                0.0,
-                                egui::TextFormat {
-                                    font_id: FontId::proportional(COURSE_FONT_SIZE - 0.5),
-                                    color: text_color,
-                                    ..Default::default()
-                                },
-                            );
-
-                            // Strikethrough if both closed and selected
-                            let is_closed_selected =
-                                app_ctx.course_manager.borrow().is_selected(record_rc)
-                                    && record.is_closed();
-                            if is_closed_selected {
-                                job.sections.iter_mut().for_each(|section| {
-                                    section.format.strikethrough = Stroke::new(2.0, Color32::BLACK);
-                                });
-                            }
-
-                            ui.add(Label::new(job).wrap_mode(TextWrapMode::Wrap));
-                        },
-                    );
-                });
-            }
-
-            x += spanned;
-        }
-    }
-}
-
-fn render_layout_edges(
-    ctx: &LayoutContext,
-    ui: &mut Ui,
-    layout_rect: &Rect,
-    day: &OrderedWeekday,
-    span: &CourseSpan,
-) {
-    let period_count = span.period_count() as usize;
-    let edges = ctx.layout_edges.get(day).unwrap();
-    let timeslots_y = layout_rect.top() + DAY_HEADER_HEIGHT;
-    let courses_y = timeslots_y + TIMESLOT_HEADER_HEIGHT;
-
-    // Convert an edge-grid row index to a pixel y coordinate
-    let y_idx_to_pixel = |idx: usize| -> f32 {
-        match idx {
-            0 => layout_rect.top(),
-            1 => timeslots_y,
-            _ => courses_y + (idx - EDGE_HEADER_ROWS) as f32 * COURSE_SLOT_HEIGHT,
-        }
-    };
-
-    let stroke = Stroke::new(
-        1.0,
-        ui.style().visuals.widgets.noninteractive.bg_stroke.color,
-    );
-    let painter = ui.painter();
-
-    // Draw horizontal edges
-    // We iterate to period_count + 1 to flush any open runs
-    for (y_idx, row) in edges.h_edges.iter().enumerate() {
-        let y = y_idx_to_pixel(y_idx);
-        let mut run_start: Option<usize> = None;
-
-        // Iterate to period_count inclusive
-        #[allow(clippy::needless_range_loop)]
-        for x_idx in 0..=period_count {
-            let active = x_idx < period_count && row[x_idx];
-            if active {
-                if run_start.is_none() {
-                    run_start = Some(x_idx);
-                }
-            } else if let Some(sx) = run_start {
-                let px1 = layout_rect.left() + sx as f32 * TIMESLOT_HEADER_WIDTH;
-                let px2 = layout_rect.left() + x_idx as f32 * TIMESLOT_HEADER_WIDTH;
-                painter.line_segment([egui::pos2(px1, y), egui::pos2(px2, y)], stroke);
-                run_start = None;
-            }
-        }
-    }
-
-    // Draw vertical edges
-    // We iterate to v_row_count + 1 to flush any open runs aswell
-    let v_row_count = edges.v_row_count();
-    let v_col_count = edges.v_edges.first().map_or(0, |r| r.len());
-
-    for x_idx in 0..v_col_count {
-        let x = layout_rect.left() + x_idx as f32 * TIMESLOT_HEADER_WIDTH;
-        let mut run_start: Option<usize> = None;
-
-        for y_idx in 0..=v_row_count {
-            let active = y_idx < v_row_count && edges.v_edges[y_idx][x_idx];
-            if active {
-                if run_start.is_none() {
-                    run_start = Some(y_idx);
-                }
-            } else if let Some(sy) = run_start {
-                let py1 = y_idx_to_pixel(sy);
-                let py2 = y_idx_to_pixel(y_idx);
-                painter.line_segment([egui::pos2(x, py1), egui::pos2(x, py2)], stroke);
-                run_start = None;
-            }
-        }
-    }
-}
-
-fn needs_wrap(ctx: &LayoutContext, size: &Vec2) -> bool {
-    let available_width = ctx.container_rect.width() - ctx.x - TIMETABLE_PADDING.x;
-    size.x > available_width
-}
-
-fn wrap(ctx: &mut LayoutContext) {
-    ctx.x = ctx.container_rect.left() + TIMETABLE_PADDING.x;
-    ctx.y += ctx.max_layout_height + TIMETABLE_SPACING.y;
-    ctx.max_layout_height = 0.0;
-}
-
-fn advance(ctx: &mut LayoutContext, rect: &Rect) {
-    ctx.x += rect.width() + TIMETABLE_SPACING.x;
-    ctx.max_layout_height = ctx.max_layout_height.max(rect.height());
-}
-
-fn calculate_rect(ctx: &mut LayoutContext, size: &Vec2) -> Rect {
-    Rect {
-        min: (ctx.x, ctx.y).into(),
-        max: (ctx.x + size.x, ctx.y + size.y).into(),
-    }
+                ui.add(Label::new(job).wrap_mode(TextWrapMode::Wrap));
+            },
+        );
+    });
 }
 
 fn resolve_visual_state(
-    ctx: &LayoutContext,
+    hovered_render: &Option<Rc<RefCell<CourseRecord>>>,
     app_ctx: &CrynContext,
     record: &Rc<RefCell<CourseRecord>>,
 ) -> CourseVisualState {
     let borrowed = record.borrow();
-    let course_manager = app_ctx.course_manager.borrow_mut();
+    let course_manager = app_ctx.course_manager.borrow();
 
-    // Hovered? Check group relationship
-    if let Some(hovered) = &ctx.hovered_render
+    // Check group relationship with hovered record
+    if let Some(hovered) = hovered_render
         && !Rc::ptr_eq(record, hovered)
     {
         let hovered_borrowed = hovered.borrow();
-
         let same_course = Rc::ptr_eq(
             &borrowed.course_definition,
             &hovered_borrowed.course_definition,
@@ -556,7 +538,6 @@ fn resolve_visual_state(
         }
     }
 
-    // Selected + clashing?
     if course_manager.is_selected(record) {
         return if course_manager.is_clashing(record) {
             CourseVisualState::Clashing
@@ -565,7 +546,6 @@ fn resolve_visual_state(
         };
     }
 
-    // Closed?
     if borrowed.is_closed() {
         return CourseVisualState::Closed;
     }
