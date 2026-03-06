@@ -142,7 +142,7 @@ impl CourseManager {
 
     fn notify_listeners(&mut self, event: CourseEvent) {
         self.consumers.iter().for_each(|listener| {
-            listener.borrow_mut().on_course_event(&self, &event);
+            listener.borrow_mut().on_course_event(self, &event);
         });
     }
 
