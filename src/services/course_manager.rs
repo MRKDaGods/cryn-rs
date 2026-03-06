@@ -15,24 +15,26 @@ pub struct CourseManager {
 }
 
 impl CourseManager {
+    /// Returns the course definition for the given code, creating it if it doesnt exist.
+    /// The boolean indicates whether a new definition was created.
     pub fn get_or_add_course_definition(
         &mut self,
         code: &str,
         name: &str,
-    ) -> Rc<RefCell<CourseDefinition>> {
+    ) -> (Rc<RefCell<CourseDefinition>>, bool) {
         let pos = self
             .course_definitions
             .iter()
             .position(|c| c.borrow().code == code);
 
         match pos {
-            Some(idx) => Rc::clone(&self.course_definitions[idx]),
+            Some(idx) => (Rc::clone(&self.course_definitions[idx]), false),
 
             // Create new def
             None => {
                 let new_def = Rc::new(RefCell::new(CourseDefinition::new(code, name))); /* Allocation here */
                 self.course_definitions.push(Rc::clone(&new_def)); /* yes, i just got to know rc */
-                new_def
+                (new_def, true)
             }
         }
     }
@@ -54,7 +56,11 @@ impl CourseManager {
     }
 
     pub fn is_clashing(&self, record: &Rc<RefCell<CourseRecord>>) -> bool {
-        self.clashing_records.contains(&Rc::as_ptr(record))
+        self.is_clashing_raw(Rc::as_ptr(record))
+    }
+
+    pub fn is_clashing_raw(&self, record_ptr: *const RefCell<CourseRecord>) -> bool {
+        self.clashing_records.contains(&record_ptr)
     }
 
     pub fn toggle_selected_course(&mut self, record: &Rc<RefCell<CourseRecord>>) {
@@ -136,7 +142,7 @@ impl CourseManager {
 
     fn notify_listeners(&mut self, event: CourseEvent) {
         self.consumers.iter().for_each(|listener| {
-            listener.borrow_mut().on_course_event(&event);
+            listener.borrow_mut().on_course_event(&self, &event);
         });
     }
 

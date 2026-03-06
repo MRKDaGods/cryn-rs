@@ -264,6 +264,7 @@ impl View for CoursesView {
                                 selected,
                                 lecture_count,
                                 tutorial_count,
+                                ..
                             } = &mut *definitions[filtered_indices[row.index()]].borrow_mut();
 
                             row.set_hovered(*hovered_row_idx == Some(row.index()));

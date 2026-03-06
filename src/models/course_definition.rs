@@ -6,6 +6,9 @@ bitflags! {
         const None = 0;
         const MultipleLectures = 1 << 0;
         const MultipleTutorials = 1 << 1;
+
+        /// For courses like gp, to clear disambiguation when importing
+        const NonUniqueName = 1 << 2;
     }
 }
 
@@ -19,6 +22,10 @@ impl std::fmt::Display for CourseFlags {
 
         if self.contains(CourseFlags::MultipleTutorials) {
             flags.push("Multiple Tutorials".to_owned());
+        }
+
+        if self.contains(CourseFlags::NonUniqueName) {
+            flags.push("NonUniqueName".to_owned());
         }
 
         if flags.is_empty() {
@@ -35,8 +42,6 @@ pub struct CourseDefinition {
     pub name: String,
     pub flags: CourseFlags, // For ykyk ;) bas we're graduating 5alas :(
     pub selected: bool,
-
-    // To remove later?
     pub lecture_count: u32,
     pub tutorial_count: u32,
 }

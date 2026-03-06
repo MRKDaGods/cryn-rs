@@ -129,7 +129,7 @@ impl MainWindow {
 impl Window for MainWindow {
     fn initialize(&mut self, app_ctx: &CrynContext) {
         // Register views
-        self.register_view(TimeTableView::new());
+        self.register_view(TimeTableView::default());
         self.register_view(CoursesView::new());
         self.register_view(PlaceholderView);
 

@@ -5,7 +5,9 @@ use std::rc::Rc;
 use chrono::{Duration, NaiveTime, Timelike, Weekday};
 use regex::Regex;
 
-use crate::models::{CourseFlags, CourseParseFormat, CourseRecord, CourseRecordType};
+use crate::models::{
+    CourseDefinition, CourseFlags, CourseParseFormat, CourseRecord, CourseRecordType,
+};
 use crate::services::CourseManager;
 
 const MIN_HOUR: u32 = 8;
@@ -29,6 +31,9 @@ pub fn parse(course_manager: &mut CourseManager, data: &str) {
     // Clear existing data
     course_manager.course_records.clear();
     course_manager.course_definitions.clear();
+
+    // Track non unique names
+    let mut name_map = HashMap::<String, Vec<Rc<RefCell<CourseDefinition>>>>::new();
 
     // Parse new data
     let re = Regex::new(COURSE_RECORD_REGEX).unwrap();
@@ -56,45 +61,56 @@ pub fn parse(course_manager: &mut CourseManager, data: &str) {
         let location = sanitize_str(get_capture_value(&c, 12));
 
         // Validate timespans
-        fix_timespan(&mut from);
-        fix_timespan(&mut to);
+        fix_timespan(&mut from, None);
+        fix_timespan(&mut to, Some(&from));
 
         // Get course def and register record
-        let course_definition_rc = course_manager.get_or_add_course_definition(code, name);
+        let (course_definition_rc, has_created) =
+            course_manager.get_or_add_course_definition(code, name);
+
+        // Track unique names
+        if has_created {
+            let same_name_courses = name_map.entry(name_fixup.clone()).or_default();
+            same_name_courses.push(Rc::clone(&course_definition_rc));
+        }
+
+        let mut course_definition = course_definition_rc.borrow_mut();
 
         // Update course stats
         match record_type {
-            CourseRecordType::Lecture => course_definition_rc.borrow_mut().lecture_count += 1,
-            CourseRecordType::Tutorial => course_definition_rc.borrow_mut().tutorial_count += 1,
+            CourseRecordType::Lecture => course_definition.lecture_count += 1,
+            CourseRecordType::Tutorial => course_definition.tutorial_count += 1,
             CourseRecordType::None => {
                 panic!("Invalid course type {:?}", course_definition_rc.borrow())
             }
         }
 
-        course_manager
-            .course_records
-            .push(Rc::new(RefCell::new(CourseRecord {
-                course_definition: Rc::clone(&course_definition_rc),
-                group,
-                record_type,
-                day,
-                start_time: from,
-                end_time: to,
-                class_size,
-                enrolled,
-                waiting,
-                status,
-                location,
-                parse_format,
-                ..Default::default()
-            })));
+        let record_rc = Rc::new(RefCell::new(CourseRecord {
+            course_definition: Rc::clone(&course_definition_rc),
+            group,
+            record_type,
+            day,
+            start_time: from,
+            end_time: to,
+            class_size,
+            enrolled,
+            waiting,
+            status,
+            location,
+            parse_format,
+            ..Default::default()
+        }));
+        course_manager.course_records.push(record_rc);
     }
 
     // Sort courses and apply flags
-    post_process_courses(course_manager);
+    post_process_courses(course_manager, name_map);
 }
 
-fn post_process_courses(course_manager: &mut CourseManager) {
+fn post_process_courses(
+    course_manager: &mut CourseManager,
+    name_map: HashMap<String, Vec<Rc<RefCell<CourseDefinition>>>>,
+) {
     // Sort course definitions by code
     course_manager
         .course_definitions
@@ -165,10 +181,19 @@ fn post_process_courses(course_manager: &mut CourseManager) {
             def_rc.borrow_mut().flags |= CourseFlags::MultipleTutorials;
         }
     });
+
+    // Name uniqueness
+    for (_, defs) in name_map {
+        // Check if more than one course has the same name
+        if defs.len() > 1 {
+            defs.iter()
+                .for_each(|def_rc| def_rc.borrow_mut().flags |= CourseFlags::NonUniqueName);
+        }
+    }
 }
 
-fn fix_timespan(timespan: &mut NaiveTime) {
-    if timespan.hour() < MIN_HOUR {
+fn fix_timespan(timespan: &mut NaiveTime, relv_time: Option<&NaiveTime>) {
+    if timespan.hour() < MIN_HOUR || relv_time.is_some_and(|t| *t > *timespan) {
         *timespan += Duration::hours(12);
     }
 }

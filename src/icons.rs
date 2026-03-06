@@ -9,3 +9,5 @@ pub const RESTORE: &str = "\u{E923}";
 pub const MINIMIZE: &str = "\u{E921}";
 pub const SEPARATOR: &str = "\u{E108}";
 pub const IMPORT: &str = "\u{E8E5}";
+pub const WARNING: &str = "\u{E7BA}";
+pub const LOCK: &str = "\u{E72E}";

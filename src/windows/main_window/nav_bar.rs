@@ -36,6 +36,7 @@ pub fn render_nav_bar(main_window: &mut MainWindow, ctx: &Context, app_ctx: &Cry
                 None,
             );
 
+            // Explicitly handle click without main_window
             if clicked && let Some(on_click) = on_click {
                 on_click();
             }
