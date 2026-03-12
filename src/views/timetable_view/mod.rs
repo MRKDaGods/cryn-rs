@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use egui::{Align, Color32, FontId, Layout, RichText, Sense, Ui, Vec2};
+use listener::TimeTableListenerState;
 
 use crate::CrynContext;
 use crate::models::{CourseEventListener, CourseSpan, OrderedWeekday};
@@ -18,30 +19,15 @@ use crate::views::timetable_view::colors::{
 use crate::views::{MainWindowView, View};
 use crate::windows::{NavbarInterface, Window};
 
-use listener::TimeTableListenerState;
-
 pub struct TimeTableView {
     span_map: BTreeMap<OrderedWeekday, CourseSpan>,
     layout_context: layout_engine::LayoutContext,
     listener_state: Rc<RefCell<TimeTableListenerState>>,
 }
 
-impl Default for TimeTableView {
-    fn default() -> Self {
-        Self {
-            span_map: BTreeMap::new(),
-            layout_context: layout_engine::LayoutContext::default(),
-            listener_state: Rc::new(RefCell::new(TimeTableListenerState::default())),
-        }
-    }
-}
-
-impl View for TimeTableView {
-    fn name(&self) -> &str {
-        "Time Table"
-    }
-
-    fn on_show(&mut self, app_ctx: &CrynContext) {
+impl TimeTableView {
+    /// Rebuilds the span map and recomputes the layout context
+    fn rebuild(&mut self, app_ctx: &CrynContext) {
         // Build span map
         let available_records = app_ctx
             .course_manager
@@ -61,6 +47,27 @@ impl View for TimeTableView {
 
         // Recompute everything
         self.layout_context.invalidate();
+    }
+}
+
+impl Default for TimeTableView {
+    fn default() -> Self {
+        Self {
+            span_map: BTreeMap::new(),
+            layout_context: layout_engine::LayoutContext::default(),
+            listener_state: Rc::new(RefCell::new(TimeTableListenerState::default())),
+        }
+    }
+}
+
+impl View for TimeTableView {
+    fn name(&self) -> &str {
+        "Time Table"
+    }
+
+    fn on_show(&mut self, app_ctx: &CrynContext) {
+        // Rebuild span map and layout context
+        self.rebuild(app_ctx);
 
         // Register listener
         app_ctx.course_manager.borrow_mut().register_listener(
@@ -76,6 +83,12 @@ impl View for TimeTableView {
     }
 
     fn on_gui(&mut self, ui: &mut egui::Ui, app_ctx: &CrynContext, window: &mut dyn Window) {
+        // Check for rebuild requests
+        let rebuild_required = self.listener_state.borrow().rebuild_required.consume();
+        if rebuild_required {
+            self.rebuild(app_ctx);
+        }
+
         // If no courses, show placeholder
         if self.span_map.is_empty() {
             landing::render_landing(ui, app_ctx, window);

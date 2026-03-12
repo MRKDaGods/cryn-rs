@@ -7,10 +7,14 @@ use crate::models::{
     CourseRecordType, CourseSummary,
 };
 use crate::services::CourseManager;
+use crate::utils::Signal;
 
 #[derive(Default)]
 pub(super) struct TimeTableListenerState {
     pub course_summaries: Vec<CourseSummary>,
+
+    /// Whether the timetable needs to be rebuilt due to a summary import
+    pub rebuild_required: Signal,
 }
 
 impl TimeTableListenerState {
@@ -86,6 +90,10 @@ impl CourseEventListener for TimeTableListenerState {
         match event {
             CourseEvent::SelectionChanged(selected_records) => {
                 self.rebuild_summary(course_manager, selected_records);
+            }
+
+            CourseEvent::SummaryImported => {
+                self.rebuild_required.request();
             }
         }
     }

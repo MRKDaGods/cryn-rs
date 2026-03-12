@@ -7,6 +7,7 @@ use crate::services::CourseManager;
 #[derive(Debug, Clone)]
 pub enum CourseEvent {
     SelectionChanged(Vec<Rc<RefCell<CourseRecord>>>),
+    SummaryImported,
 }
 
 pub trait CourseEventListener {

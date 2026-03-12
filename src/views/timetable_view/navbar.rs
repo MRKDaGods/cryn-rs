@@ -9,7 +9,7 @@ use egui::{
 
 use super::colors::COURSE_COLORS_UNK;
 use super::listener::TimeTableListenerState;
-use crate::models::CourseDefinition;
+use crate::models::{CourseDefinition, CourseSummary};
 use crate::utils::ui::get_trunacted_text;
 use crate::windows::NavbarInterface;
 use crate::{CrynContext, icons};
@@ -33,51 +33,13 @@ pub(super) fn render_navbar(
         .reduce(|prev, curr| (prev.0 + curr.0, prev.1 + curr.1))
         .unwrap_or_default();
 
-    // Build inline summary text
-    let mut summary_parts: Vec<String> = listener_state
-        .course_summaries
-        .iter()
-        .map(|s| {
-            let mut part = format!(
-                "{}{} ({}/{})",
-                if s.has_non_unique_name {
-                    format!("[{}] ", &s.code)
-                } else {
-                    "".to_owned()
-                },
-                &s.name,
-                s.selected_lec.map_or("NA".to_owned(), |g| g.to_string()),
-                s.selected_tut.map_or("NA".to_owned(), |g| g.to_string()),
-            );
-
-            // Append status indicators
-            if s.has_clashing {
-                part.push_str(&format!(" {}", icons::WARNING));
-            }
-
-            if s.has_closed {
-                part.push_str(&format!(" {}", icons::LOCK));
-            }
-
-            part
-        })
-        .collect();
-
-    // Append issue summary
-    if clashing_count > 0 || closed_count > 0 {
-        let mut issues = Vec::new();
-        if clashing_count > 0 {
-            issues.push(format!("{} clashing", clashing_count));
-        }
-
-        if closed_count > 0 {
-            issues.push(format!("{} closed", closed_count));
-        }
-
-        summary_parts.push(format!("[{}]", issues.join(", ")));
-    }
-
-    let summary_text = summary_parts.join(format!(" {} ", icons::SEPARATOR).as_str());
+    // Build non copyable summary text
+    let display_summary_text = make_summary_text(
+        &listener_state.course_summaries,
+        false,
+        clashing_count,
+        closed_count,
+    );
 
     // Render hover fill
     let rect = ui.max_rect();
@@ -118,7 +80,7 @@ pub(super) fn render_navbar(
         ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
             let width = ui.available_width();
             let summary_font_size = 13.0;
-            let text = get_trunacted_text(ui, &summary_text, summary_font_size, width, 1);
+            let text = get_trunacted_text(ui, &display_summary_text, summary_font_size, width, 1);
 
             let mut rich_text = RichText::new(text).size(summary_font_size);
             if !is_active {
@@ -305,7 +267,13 @@ pub(super) fn render_navbar(
                         )
                         .clicked()
                     {
-                        ui.ctx().copy_text(summary_text);
+                        let copyable_summary_text = make_summary_text(
+                            &listener_state.course_summaries,
+                            true,
+                            clashing_count,
+                            closed_count,
+                        );
+                        ui.ctx().copy_text(copyable_summary_text);
 
                         // Update last copy time
                         ui.data_mut(|d| d.insert_temp(copy_id, SystemTime::now()));
@@ -354,4 +322,62 @@ pub(super) fn render_navbar(
                 }
             }
         });
+}
+
+/// Builds the course summary text.
+///
+/// Both copyable and non-copyable versions.
+fn make_summary_text(
+    courses: &[CourseSummary],
+    copyable: bool,
+    clashing_count: u32,
+    closed_count: u32,
+) -> String {
+    let mut summary_parts: Vec<String> = courses
+        .iter()
+        .map(|s| {
+            let mut part = format!(
+                "{}{} ({}/{})",
+                if s.has_non_unique_name {
+                    format!("[{}] ", &s.code)
+                } else {
+                    "".to_owned()
+                },
+                &s.name,
+                s.selected_lec.map_or("NA".to_owned(), |g| g.to_string()),
+                s.selected_tut.map_or("NA".to_owned(), |g| g.to_string()),
+            );
+
+            if !copyable {
+                // Append status indicators
+                if s.has_clashing {
+                    part.push_str(&format!(" {}", icons::WARNING));
+                }
+
+                if s.has_closed {
+                    part.push_str(&format!(" {}", icons::LOCK));
+                }
+            }
+
+            part
+        })
+        .collect();
+
+    if !copyable {
+        // Append issue summary
+        if clashing_count > 0 || closed_count > 0 {
+            let mut issues = Vec::new();
+            if clashing_count > 0 {
+                issues.push(format!("{} clashing", clashing_count));
+            }
+
+            if closed_count > 0 {
+                issues.push(format!("{} closed", closed_count));
+            }
+
+            summary_parts.push(format!("[{}]", issues.join(", ")));
+        }
+    }
+
+    summary_parts.join(format!(" {} ", icons::SEPARATOR).as_str())
 }
