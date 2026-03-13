@@ -353,14 +353,16 @@ impl MainWindowView for CoursesView {
     ) {
         // Wesh endir hachkak rijali
         // Taste fr
-        (interface.render_button_fn)(
-            ui,
-            crate::icons::IMPORT,
-            "Import List",
-            None,
-            Some(&|| {
-                app_ctx.show_import_window();
-            }),
-        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            (interface.render_button_fn)(
+                ui,
+                crate::icons::IMPORT,
+                "Import List",
+                None,
+                Some(&|_| {
+                    app_ctx.show_import_window();
+                }),
+            );
+        });
     }
 }

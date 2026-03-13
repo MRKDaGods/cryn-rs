@@ -7,8 +7,9 @@ mod navbar;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
-use egui::{Align, Color32, FontId, Layout, RichText, Sense, Ui, Vec2};
+use egui::{Align, Color32, Event, FontId, Layout, RichText, Sense, Ui, Vec2};
 use listener::TimeTableListenerState;
 
 use crate::CrynContext;
@@ -23,6 +24,7 @@ pub struct TimeTableView {
     span_map: BTreeMap<OrderedWeekday, CourseSpan>,
     layout_context: layout_engine::LayoutContext,
     listener_state: Rc<RefCell<TimeTableListenerState>>,
+    pending_screenshot: bool,
 }
 
 impl TimeTableView {
@@ -56,6 +58,7 @@ impl Default for TimeTableView {
             span_map: BTreeMap::new(),
             layout_context: layout_engine::LayoutContext::default(),
             listener_state: Rc::new(RefCell::new(TimeTableListenerState::default())),
+            pending_screenshot: false,
         }
     }
 }
@@ -84,7 +87,7 @@ impl View for TimeTableView {
 
     fn on_gui(&mut self, ui: &mut egui::Ui, app_ctx: &CrynContext, window: &mut dyn Window) {
         // Check for rebuild requests
-        let rebuild_required = self.listener_state.borrow().rebuild_required.consume();
+        let rebuild_required = self.listener_state.borrow_mut().rebuild_required.consume();
         if rebuild_required {
             self.rebuild(app_ctx);
         }
@@ -103,9 +106,18 @@ impl View for TimeTableView {
             let style = ui.style_mut();
             style.spacing.item_spacing = egui::vec2(0.0, 0.0);
 
-            // Clip to timetable area
-            let rect = ui.available_rect_before_wrap();
-            ui.set_clip_rect(rect);
+            let screenshot_required = self
+                .listener_state
+                .borrow_mut()
+                .screenshot_required
+                .consume();
+            if screenshot_required {
+                self.pending_screenshot = true; // listen for screenshot event
+            } else {
+                // Clip to timetable area
+                let rect = ui.available_rect_before_wrap();
+                ui.set_clip_rect(rect);
+            }
 
             // Render days
             egui::ScrollArea::vertical()
@@ -122,6 +134,34 @@ impl View for TimeTableView {
                     });
                 });
         });
+
+        // Check for pending screenshot
+        if self.pending_screenshot
+            && let Some(screenshot) = ui.input(|i| {
+                i.events
+                    .iter()
+                    .filter_map(|e| {
+                        if let Event::Screenshot { image, .. } = e {
+                            Some(Arc::clone(image))
+                        } else {
+                            None
+                        }
+                    })
+                    .next_back()
+            })
+        {
+            self.pending_screenshot = false;
+
+            // Save to disk
+            image::save_buffer(
+                "screenshot.png",
+                screenshot.as_raw(),
+                screenshot.width() as u32,
+                screenshot.height() as u32,
+                image::ColorType::Rgba8,
+            )
+            .unwrap();
+        }
     }
 }
 
@@ -130,8 +170,8 @@ impl MainWindowView for TimeTableView {
         Some(0.0)
     }
 
-    fn on_navbar_gui(&mut self, ui: &mut Ui, app_ctx: &CrynContext, _interface: &NavbarInterface) {
-        navbar::render_navbar(&self.listener_state, ui, app_ctx, _interface);
+    fn on_navbar_gui(&mut self, ui: &mut Ui, app_ctx: &CrynContext, interface: &NavbarInterface) {
+        navbar::render_navbar(&self.listener_state, ui, app_ctx, interface);
     }
 }
 

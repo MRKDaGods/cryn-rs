@@ -17,7 +17,7 @@ use crate::{CrynContext, icons};
 const NAVBAR_VIEW_CONTENT_PADDING: f32 = 12.0;
 
 pub struct NavbarInterface<'a> {
-    pub render_button_fn: &'a dyn Fn(&mut Ui, &str, &str, Option<f32>, Option<&dyn Fn()>),
+    pub render_button_fn: &'a dyn Fn(&mut Ui, &str, &str, Option<f32>, Option<&dyn Fn(&mut Ui)>),
 }
 
 pub fn render_nav_bar(main_window: &mut MainWindow, ctx: &Context, app_ctx: &CrynContext) {
@@ -38,7 +38,7 @@ pub fn render_nav_bar(main_window: &mut MainWindow, ctx: &Context, app_ctx: &Cry
 
             // Explicitly handle click without main_window
             if clicked && let Some(on_click) = on_click {
-                on_click();
+                on_click(ui);
             }
         },
     };
@@ -96,16 +96,6 @@ pub fn render_nav_bar(main_window: &mut MainWindow, ctx: &Context, app_ctx: &Cry
                             icons::SETTINGS,
                             "Settings",
                             button_width,
-                        );
-
-                        render_button(
-                            Some(main_window),
-                            ui,
-                            icons::SCREENSHOT,
-                            "Screenshot",
-                            button_width,
-                            Some(|_: &mut MainWindow| {}),
-                            Some(false),
                         );
 
                         // Render view-specific navbar content

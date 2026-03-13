@@ -30,7 +30,7 @@ struct LayoutEdges {
 }
 
 /// Number of header rows before course rows begin in the edge grid
-/// 
+///
 /// Row 0 = day header top, row 1 = timeslot header top, row 2 = timeslot header bottom = courses top
 const EDGE_HEADER_ROWS: usize = 2;
 
@@ -63,12 +63,12 @@ pub struct LayoutContext {
     layout_edges: HashMap<OrderedWeekday, LayoutEdges>,
 
     /// Last frame hovered course record
-    /// 
+    ///
     /// Rendering pass
     hovered_render: Option<Rc<RefCell<CourseRecord>>>,
 
     /// Current frame hovered course record
-    /// 
+    ///
     /// Interaction pass
     hovered_interaction: Option<Rc<RefCell<CourseRecord>>>,
 }

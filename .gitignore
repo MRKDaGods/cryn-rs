@@ -2,3 +2,9 @@
 /dist
 /.vscode
 Cargo.lock
+
+# :P
+/zed_diff_output
+
+# Dummy timetable screenshots
+*.png

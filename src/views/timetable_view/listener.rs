@@ -15,6 +15,9 @@ pub(super) struct TimeTableListenerState {
 
     /// Whether the timetable needs to be rebuilt due to a summary import
     pub rebuild_required: Signal,
+
+    /// Are we taking a screenshot?
+    pub screenshot_required: Signal,
 }
 
 impl TimeTableListenerState {

@@ -1,3 +1,9 @@
+[workspace]
+members = [".", "scripts"]
+
+[workspace.dependencies]
+regex = "1.12.3"
+
 [package]
 name = "cryn-rs"
 version = "0.1.0"
@@ -9,8 +15,9 @@ chrono = "0.4.43"
 eframe = { version = "0.33.3", features = ["wgpu"] }
 egui = "0.33.3"
 egui_extras = "0.33.3"
-regex = "1.12.3"
+image = "0.25.10"
 strum = { version = "0.27.2", features = ["derive"] }
+regex.workspace = true
 
 [target.x86_64-pc-windows-msvc.dependencies]
 display-info = "0.5.7"

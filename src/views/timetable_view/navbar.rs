@@ -4,7 +4,8 @@ use std::time::SystemTime;
 
 use egui::{
     Align, Color32, CornerRadius, CursorIcon, Frame, Label, Layout, Margin, Popup,
-    PopupCloseBehavior, RichText, Sense, Stroke, StrokeKind, Ui, Vec2,
+    PopupCloseBehavior, RichText, Sense, Stroke, StrokeKind, Ui, UiBuilder, UserData, Vec2,
+    ViewportCommand,
 };
 
 use super::colors::COURSE_COLORS_UNK;
@@ -18,7 +19,40 @@ pub(super) fn render_navbar(
     listener_state_rc: &Rc<RefCell<TimeTableListenerState>>,
     ui: &mut Ui,
     app_ctx: &CrynContext,
-    _interface: &NavbarInterface,
+    interface: &NavbarInterface,
+) {
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        // Render screenshot button
+        (interface.render_button_fn)(
+            ui,
+            icons::SCREENSHOT,
+            "Screenshot",
+            None,
+            Some(&|ui| {
+                // Take screenshot
+                ui.ctx()
+                    .send_viewport_cmd(ViewportCommand::Screenshot(UserData::default()));
+
+                // Notify timetable listener that a screenshot was requested
+                listener_state_rc
+                    .borrow_mut()
+                    .screenshot_required
+                    .request_delayed(1);
+            }),
+        );
+
+        // Render summaries
+        let summary_rect = ui.available_rect_before_wrap();
+        ui.scope_builder(UiBuilder::new().max_rect(summary_rect), |ui| {
+            render_summaries(listener_state_rc, ui, app_ctx);
+        });
+    });
+}
+
+fn render_summaries(
+    listener_state_rc: &Rc<RefCell<TimeTableListenerState>>,
+    ui: &mut Ui,
+    app_ctx: &CrynContext,
 ) {
     let listener_state = listener_state_rc.borrow();
     if listener_state.course_summaries.is_empty() {
@@ -326,7 +360,7 @@ pub(super) fn render_navbar(
 
 /// Builds the course summary text.
 ///
-/// Both copyable and non-copyable versions.
+/// Both copyable and non-copyable versions
 fn make_summary_text(
     courses: &[CourseSummary],
     copyable: bool,
